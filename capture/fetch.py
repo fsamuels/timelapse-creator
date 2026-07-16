@@ -14,10 +14,21 @@ def fetch_image(url, timeout=15):
 def fetch_stream_frame(url, timeout=20):
     result = subprocess.run(
         [
-            "ffmpeg", "-y", "-i", url,
-            "-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "-",
+            "ffmpeg",
+            "-y",
+            "-i",
+            url,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "-",
         ],
-        capture_output=True, timeout=timeout, check=True,
+        capture_output=True,
+        timeout=timeout,
+        check=True,
     )
     return result.stdout
 

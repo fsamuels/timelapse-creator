@@ -1,6 +1,5 @@
 import hashlib
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 
 def frame_hash(data):
@@ -20,7 +19,7 @@ def is_stale(data, cam_dir):
 
 
 def save_frame(data, cam_dir):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month_dir = cam_dir / now.strftime("%Y/%m")
     month_dir.mkdir(parents=True, exist_ok=True)
     path = month_dir / f"{now.strftime('%Y-%m-%dT%H-%M-%S-%f')}Z.jpg"
