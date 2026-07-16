@@ -9,14 +9,17 @@
   is the normal state, not a failure mode.
 - [OnTheSnow archives daily images from Bluewood](https://www.onthesnow.com/washington/bluewood/webcams),
   which could serve as a backfill source for days the capture job misses.
-- **Open homework item:** inspect how the cams are embedded on bluewood.com (the design
-  sandbox couldn't reach the site). Two likely cases:
-  - a plain `.jpg` URL that the page refreshes — trivial to fetch with an HTTP GET;
-  - an embedded live stream (YouTube/HLS) — still workable; ffmpeg can grab a single frame
-    from a stream (`ffmpeg -i <stream-url> -frames:v 1 out.jpg`).
+- **How the cams are served (resolved):** both are hosted on **CameraFTP** (DriveHQ) via a
+  "last image" REST endpoint — a plain JPEG, no scraping or stream-grabbing needed:
+  - Summit: `https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?`
+  - Base: `https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?`
 
-  The capture code should isolate this behind a small "fetch one frame" function per cam so
-  the rest of the system doesn't care which case it is.
+  `capture/fetch.py` still supports the "grab one frame from a video stream via ffmpeg" case
+  (`fetch_stream_frame`) for a future cam that isn't a plain image, but neither current cam
+  needs it.
+- **Bonus find:** the cams are live in July (off-season) because the resort is doing
+  maintenance and replacing the old 3-person lift with a high-speed quad — a second,
+  time-sensitive timelapse subject alongside the season-long snow one.
 
 ## Architecture: two decoupled pieces
 
@@ -34,7 +37,9 @@ builder's job. A bad filtering idea can be re-run; a frame never captured is gon
 
 ## Component 1: the capture job
 
-Runs on a schedule (cron or equivalent — platform TBD, see open questions). Each run:
+**Implemented** in `capture/` (`fetch.py`, `archive.py`, `main.py`, `config.yaml`), running
+as a GitHub Actions cron job (`.github/workflows/capture.yml`) every 15 minutes since
+2026-07-16. Each run:
 
 1. For each cam (summit, base): fetch one frame.
 2. On **fetch failure** (timeout, HTTP error, DNS): log it and move on. No retries beyond
@@ -66,23 +71,27 @@ Defense in layers:
 ```
 archive/
   summit/
-    2026/01/  # one directory per month keeps directory sizes sane
-      2026-01-15T08-30-00Z.jpg
-      2026-01-15T08-40-00Z.jpg
+    2026/07/  # one directory per month keeps directory sizes sane
+      2026-07-16T20-10-04-544533Z.jpg
+      2026-07-16T20-25-01-118203Z.jpg
   base/
-    2026/01/
+    2026/07/
       ...
-  capture.log        # one line per run: timestamp, cam, outcome (saved/stale/failed)
 ```
 
-- Filenames are UTC timestamps → chronological sort order is lexical sort order, and the
-  builder needs no database, just a glob.
-- The log makes outages inspectable ("how long was the generator off last week?") and is
-  the raw material if we ever want to render outage annotations into the video.
+- Filenames are UTC timestamps with microsecond precision (avoids collisions if two frames
+  for the same cam are ever saved within the same second) → chronological sort order is
+  lexical sort order, and the builder needs no database, just a glob.
+- **Not yet implemented:** a persistent `capture.log`. Right now each run's outcome (saved /
+  stale / fetch failed) only goes to Python's `logging` output, which lands in the GitHub
+  Actions run log (kept ~90 days by GitHub, not committed to the repo). Good enough today;
+  worth revisiting if we want outage history to outlive that window or to drive gap
+  annotations in the video builder.
 
 ## Component 2: the video builder
 
-A CLI that turns a slice of the archive into an mp4. Everything it does is a pure function
+**Not implemented yet.** Design below is the plan, not built code. A CLI that turns a slice
+of the archive into an mp4. Everything it does is a pure function
 of the archive, so it can be re-run with different settings at any time.
 
 ```

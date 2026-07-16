@@ -3,9 +3,11 @@
 Tools for building timelapse videos from the [Ski Bluewood webcams](https://bluewood.com/webcams/)
 (Dayton, WA) — and eventually any public webcam.
 
-**Status: design phase.** Nothing is implemented yet. The documents below capture the ideas,
-constraints, and open decisions from the initial design discussion, for review before any code
-is written.
+**Status: capture pipeline is live.** A GitHub Actions cron job has been fetching frames
+from both cams every 15 minutes since 2026-07-16 and committing them straight to
+`archive/` on `main`. The video builder (turning the archive into an mp4) is not built yet.
+A Raspberry Pi Zero W is in transit (ordered 2026-07-16, ETA ~12-18 days) to eventually take
+over capture from GitHub Actions — see `docs/open-questions.md` for the plan.
 
 ## The idea
 
@@ -25,17 +27,32 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 | Document | Contents |
 | --- | --- |
 | [docs/design.md](docs/design.md) | Architecture: the capture job, the video builder, storage layout, and outage/stale-frame handling |
-| [docs/open-questions.md](docs/open-questions.md) | The decisions still open (platform, cadence, output format, gap handling, storage), the options for each, and current recommendations |
+| [docs/open-questions.md](docs/open-questions.md) | Decisions made so far and what's still open (output format, gap handling in video, long-term storage), with options and recommendations |
 
-## Quick summary of the recommended defaults
+## What's implemented
 
-- **Language/tools:** Python for the capture job and builder CLI; **ffmpeg** for video encoding.
-- **Cadence:** capture every 10 minutes from each cam.
+- `capture/config.yaml` — the two cams, as direct CameraFTP JPEG URLs
+- `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
+- `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
+- `capture/main.py` — entrypoint: fetch each cam, skip failures/stale frames, save new ones
+- `.github/workflows/capture.yml` — runs the above every 15 minutes, commits new frames to `archive/`
+
+## Not implemented yet
+
+- The video builder (archive → mp4)
+- Anything running on the Pi (still in transit) — capture is 100% on GitHub Actions for now
+- Long-term storage (frames are living in git as a deliberate short-term stopgap)
+
+## Quick summary of decisions so far
+
+- **Language/tools:** Python for the capture job; **ffmpeg** planned for the not-yet-built video builder.
+- **Cadence:** every 15 minutes (decided; see `docs/open-questions.md` #2).
 - **Archive:** raw JPEGs named by cam and UTC timestamp; never filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Video:** an on-demand builder CLI (date range → mp4), with "daily clip" and
-  "season video" as presets; gaps are skipped, with a burned-in timestamp overlay so
-  jumps in time are visible.
+- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit to take over
+  later (see `docs/open-questions.md` #1).
 
-These are defaults, not decisions — see [docs/open-questions.md](docs/open-questions.md).
+Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): what the video
+builder's output looks like (season video / daily clips / on-demand CLI), how outages should
+appear in the rendered video, and where frames/videos live long-term.
