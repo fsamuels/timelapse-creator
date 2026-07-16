@@ -58,14 +58,32 @@ Where do archived frames live, and where do finished videos go?
 **Recommendation:** frames live wherever the capture job runs (disk or bucket); Google
 Photos upload of finished videos is a worthwhile follow-on once the pipeline works.
 
-## 6. How are the cams actually served? (homework)
+## 6. How are the cams actually served? (resolved)
 
-Open bluewood.com/webcams in a browser, inspect the cam elements, and record here:
+Both cams are hosted on **CameraFTP** (DriveHQ), a third-party webcam-hosting service, via
+a "last image" REST endpoint — a plain JPEG, no scraping or stream-grabbing needed:
 
-- [ ] Summit cam: direct image URL, or stream URL + type (YouTube/HLS/other)?
-- [ ] Base cam: same
-- [ ] Does the image server send useful `Last-Modified` / `ETag` headers?
-- [ ] Any bot protection on the image URLs themselves (the HTML page 403s generic clients)?
+- Summit: `https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?`
+- Base: `https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?`
 
-This determines whether the fetch step is a plain HTTP GET or an ffmpeg stream grab, and
-whether stale-frame detection can lean on HTTP caching headers or must rely on hashing.
+These are wired into `capture/config.yaml` as `type: image`. Not yet checked: whether the
+endpoint sends useful `Last-Modified`/`ETag` headers (stale detection currently relies on
+content hashing alone, which works regardless).
+
+Bonus find: the cams are live *now*, in the off-season, because the resort is doing
+maintenance and — notably — **replacing the old 3-person lift with a high-speed quad**.
+That's a second, time-sensitive timelapse subject worth capturing alongside the season-long
+snow one.
+
+## 7. Where do frames land during the pre-Pi stopgap?
+
+Until the Raspberry Pi arrives, `.github/workflows/capture.yml` runs the same `capture/`
+code as a GitHub Actions job and commits new frames straight to `main`'s `archive/`
+directory. This is a deliberate short-term tradeoff, not the long-term storage answer from
+question 5 above: committing a growing set of binary images to git works fine for a couple
+of weeks at this volume, but isn't what we'd want for a full season. Revisit storage once
+the Pi (or a bucket) takes over as the real capture host.
+
+The workflow currently only has a `workflow_dispatch` (manual) trigger, not a `schedule` —
+intentionally, until a manual run is confirmed to work end-to-end against the real CameraFTP
+URLs. Adding the recurring cron is the next step after that.
