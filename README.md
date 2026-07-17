@@ -47,7 +47,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 
 - **Language/tools:** Python for the capture job; **ffmpeg** planned for the not-yet-built video builder.
 - **Cadence:** every 15 minutes (decided; see `docs/open-questions.md` #2).
-- **Archive:** raw JPEGs named by cam and UTC timestamp; never filtered at capture time.
+- **Archive:** raw JPEGs named by cam and a fixed UTC-8 (Pacific, no DST) timestamp; never
+  filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
 - **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit to take over
