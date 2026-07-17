@@ -1,5 +1,11 @@
 import hashlib
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
+
+# Fixed UTC-8 offset, not IANA "America/Los_Angeles" — filenames stay strictly
+# monotonic across DST transitions, which the lexical-sort-based stale
+# detection below depends on. Timestamps are off by an hour from true local
+# time during PDT (summer); that's the deliberate tradeoff.
+PACIFIC = timezone(timedelta(hours=-8), name="PT-08")
 
 
 def frame_hash(data):
@@ -19,9 +25,9 @@ def is_stale(data, cam_dir):
 
 
 def save_frame(data, cam_dir):
-    now = datetime.now(UTC)
+    now = datetime.now(PACIFIC)
     month_dir = cam_dir / now.strftime("%Y/%m")
     month_dir.mkdir(parents=True, exist_ok=True)
-    path = month_dir / f"{now.strftime('%Y-%m-%dT%H-%M-%S-%f')}Z.jpg"
+    path = month_dir / f"{now.strftime('%Y-%m-%dT%H-%M-%S-%f%z')}.jpg"
     path.write_bytes(data)
     return path

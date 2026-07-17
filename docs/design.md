@@ -72,16 +72,22 @@ Defense in layers:
 archive/
   summit/
     2026/07/  # one directory per month keeps directory sizes sane
-      2026-07-16T20-10-04-544533Z.jpg
-      2026-07-16T20-25-01-118203Z.jpg
+      2026-07-16T13-10-04-544533-0800.jpg
+      2026-07-16T13-25-01-118203-0800.jpg
   base/
     2026/07/
       ...
 ```
 
-- Filenames are UTC timestamps with microsecond precision (avoids collisions if two frames
-  for the same cam are ever saved within the same second) → chronological sort order is
-  lexical sort order, and the builder needs no database, just a glob.
+- Filenames are timestamps with microsecond precision (avoids collisions if two frames for
+  the same cam are ever saved within the same second) at a **fixed UTC-8 offset** — not
+  IANA `America/Los_Angeles` — so they read close to Pacific local time without adopting
+  daylight saving time. A real PST/PDT clock repeats an hour of wall-clock time every
+  November, which would make the lexical-sort-is-chronological-sort property (the builder
+  needs no database, just a glob) silently false for one hour a year. The fixed offset means
+  timestamps run an hour behind true local time during PDT (summer) but stay strictly
+  monotonic year-round. The offset is embedded in the filename (`-0800`) so it's
+  unambiguous and self-describing.
 - **Not yet implemented:** a persistent `capture.log`. Right now each run's outcome (saved /
   stale / fetch failed) only goes to Python's `logging` output, which lands in the GitHub
   Actions run log (kept ~90 days by GitHub, not committed to the repo). Good enough today;
