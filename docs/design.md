@@ -20,6 +20,12 @@
 - **Bonus find:** the cams are live in July (off-season) because the resort is doing
   maintenance and replacing the old 3-person lift with a high-speed quad — a second,
   time-sensitive timelapse subject alongside the season-long snow one.
+- **Cams are now generalized beyond Bluewood.** `capture/main.py` takes a `--config` flag
+  (default: `capture/config.yaml`, unchanged), and a second config,
+  `capture/config.pi.yaml`, adds two Seattle (KING 5) cams — added to keep developing the
+  pipeline while Bluewood is dark. GitHub Actions keeps capturing Bluewood via the original
+  config; the Pi config is for the Pi only, per the hand-off plan
+  (`docs/open-questions.md` #1).
 
 ## Architecture: two decoupled pieces
 
@@ -88,12 +94,13 @@ archive/
   timestamps run an hour behind true local time during PDT (summer) but stay strictly
   monotonic year-round. The offset is embedded in the filename (`-0800`) so it's
   unambiguous and self-describing.
-- **Not yet implemented:** a persistent `capture.log`. Right now each run's outcome (saved /
-  stale / fetch failed) only goes to Python's `logging` output, which lands in the GitHub
-  Actions run log (kept ~90 days by GitHub, not committed to the repo). Good enough today,
-  but decided (see `docs/open-questions.md` #10) to build once the Pi takes over capture: the
-  web interface's health/status view needs it, and outage history should outlive the 90-day
-  GitHub Actions window / drive future gap annotations in the video builder.
+- **Implemented:** a persistent `capture.log` (`capture/capture_log.py`), one JSONL line per
+  cam per run (`ts`, `cam`, `outcome`, `detail`). Kept in its own module rather than folded
+  into `archive.py`, to keep that file's hash/stale-detection logic isolated (see CLAUDE.md's
+  testing rule). `capture/main.py` writes to it only when the loaded config has a
+  `capture_log` path key — `capture/config.yaml` (GitHub Actions) has none, so that path is
+  unchanged; `capture/config.pi.yaml` sets one, since the web interface's health/status view
+  and outage history need to outlive the GitHub Actions run log's ~90-day window.
 
 ### Handing capture off to the Pi
 
@@ -104,6 +111,11 @@ parallel for a ~1-2 week trial to confirm the Pi is reliable, then its schedule 
 (manual `workflow_dispatch` stays available as an emergency fallback). Existing git-committed
 frames get migrated onto the Pi's storage so the archive has one home going forward, and
 `archive/` stops being tracked in git once the trial ends.
+
+The systemd units themselves now exist as code under `deploy/pi/`
+(`timelapse-capture.service`, `timelapse-capture.timer`) with a bring-up doc
+(`deploy/pi/README.md`), pointed at `capture/config.pi.yaml`. This is scaffolding only — the
+Pi hardware hasn't arrived yet, so none of it has been smoke-tested on-device.
 
 ## Component 2: the video builder
 

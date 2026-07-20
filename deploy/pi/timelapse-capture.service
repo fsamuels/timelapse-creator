@@ -1,0 +1,7 @@
+[Unit]
+Description=Capture webcam frames for timelapse-creator (Pi)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/timelapse-creator
+ExecStart=/opt/timelapse-creator/.venv/bin/python -m capture.main --config capture/config.pi.yaml
