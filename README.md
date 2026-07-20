@@ -51,9 +51,16 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit to take over
-  later (see `docs/open-questions.md` #1).
+- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit and will take
+  over via a systemd timer, with GitHub Actions running in parallel for a short trial before
+  being disabled (see `docs/open-questions.md` #1).
+- **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —
+  AWS S3 vs. Backblaze B2 vs. Google Drive, see `docs/open-questions.md` #5).
+- **Web interface:** a status/activity dashboard is planned — home-network-only, a
+  statically-regenerated Python page (no app server) reusing the archive's own filenames for
+  the activity graph, plus a new persisted capture log for health status (see
+  `docs/open-questions.md` #9 and #10).
 
 Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): what the video
 builder's output looks like (season video / daily clips / on-demand CLI), how outages should
-appear in the rendered video, and where frames/videos live long-term.
+appear in the rendered video, and which bucket provider to use for frame backup.
