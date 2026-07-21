@@ -192,26 +192,34 @@ in the meantime.
 home network (leaning the latter, but worth a conscious decision rather than an accidental
 one).
 
-## 9. Persisted capture log (decided: needed, not yet built)
+## 9. Persisted capture log (implemented)
 
 `docs/design.md` already flagged the lack of a persistent `capture.log` as worth revisiting.
 The web interface's health/status view is the thing that makes it necessary: a fetch failure
 currently only goes to stdout / the GitHub Actions run log, which doesn't survive on the Pi
-and isn't queryable by a status page. **Decided:** add a small append to `capture/main.py` —
-one line per cam per run (timestamp, outcome: saved / stale / fetch_failed, error if any) —
-written locally on the Pi. Log rotation policy is still open, though low-stakes given the
-line is tiny and only written every 15 minutes per cam.
+and isn't queryable by a status page. **Implemented:** `capture/capture_log.py` appends one
+JSONL line per cam per run (`ts`, `cam`, `outcome`: saved / stale / fetch_failed, `detail`),
+wired into `capture/main.py` behind a `capture_log` config key — set in
+`capture/config.pi.yaml`, absent from `capture/config.yaml` so GitHub Actions' behavior is
+unchanged. Log rotation policy is still open, though low-stakes given the line is tiny and
+only written every 15 minutes per cam.
 
 ## 10. Next concrete steps
 
-- [ ] Pi Zero W arrives → bring up per "The Pi hand-off plan" (question 1): systemd timer,
-      smoke-test `capture/main.py` on-device (watch for missing armv6 wheels — `requests` and
-      `PyYAML` are both small enough to build from source if needed)
-- [ ] Point `capture/archive.py`'s save path at local disk on the Pi; migrate existing
-      git-committed frames onto it (question 1, question 5)
+- [x] Add the persisted capture log (question 9) — `capture/capture_log.py`, wired into
+      `capture/main.py` via `capture/config.pi.yaml`'s `capture_log` key
+- [x] Pi systemd scaffolding written as code — `deploy/pi/timelapse-capture.service`,
+      `deploy/pi/timelapse-capture.timer`, and a bring-up doc (`deploy/pi/README.md`). Not
+      yet run anywhere: the Pi hardware hasn't arrived, so this is untested on-device.
+- [ ] Pi Zero W arrives → bring up per "The Pi hand-off plan" (question 1) using the
+      `deploy/pi/` units, smoke-test `capture/main.py --config capture/config.pi.yaml`
+      on-device (watch for missing armv6 wheels — `requests` and `PyYAML` are both small
+      enough to build from source if needed)
+- [ ] Point the Pi config's `archive_dir` at real local disk and confirm it works end-to-end
+      on hardware; migrate existing git-committed Bluewood frames onto it once the Pi also
+      captures Bluewood (question 1, question 5)
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the
       existing AWS account before deciding; wire up `rclone` sync either way
-- [ ] Add the persisted capture log (question 9) — small addition, do alongside the Pi bring-up
 - [ ] Keep GitHub Actions running in parallel for the trial period (question 1), then disable
       the schedule and stop tracking `archive/` in git
 - [ ] Build the static-HTML web interface (question 8) once the capture log exists to read from
