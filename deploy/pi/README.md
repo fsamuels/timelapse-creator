@@ -1,11 +1,16 @@
 # Pi bring-up
 
 Runs the capture job on a Raspberry Pi via systemd instead of GitHub Actions. **This is
-deployed and running** on the Pi (hostname `timelapse-pi`), capturing **all four cams** (the
-two Bluewood cams plus the two Seattle KING 5 dev cams) from `capture/config.pi.yaml`. GitHub
-Actions (`.github/workflows/capture.yml`) still captures Bluewood in parallel during the
-hand-off trial (see `docs/open-questions.md` #1); the two capture paths run independently and
-nothing here disables the Actions schedule. The steps below document a from-scratch bring-up.
+deployed and running** on the Pi (hostname `timelapse-pi`), capturing **all six cams** (the
+two Bluewood cams, the two Seattle KING 5 dev cams, and two Pi-only North Carolina cams —
+UNCA tower and Nantahala Outdoor Center) from `capture/config.pi.yaml`. GitHub Actions
+(`.github/workflows/capture.yml`) still captures Bluewood in parallel during the hand-off
+trial (see `docs/open-questions.md` #1); the two capture paths run independently and nothing
+here disables the Actions schedule. The steps below document a from-scratch bring-up.
+
+**Running low on SD card space?** See `docs/sd-card-migration.md` for the documented
+4GB → 64GB migration process (`docs/open-questions.md` #11) — not yet executed, but written
+up for when the archive needs it.
 
 ## Steps
 
@@ -116,6 +121,6 @@ documented path for remote access.
 ## Status
 
 Deployed and confirmed working on the Pi (`timelapse-pi`): the capture timer runs every
-15 minutes against `capture/config.pi.yaml` (all four cams), and the status page is live at
+15 minutes against `capture/config.pi.yaml` (all six cams), and the status page is live at
 `http://timelapse-pi.local:8080/`. The paths in the unit files match that deployment
 (`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust them if yours differ.

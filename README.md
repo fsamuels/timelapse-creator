@@ -6,10 +6,11 @@ Tools for building timelapse videos from the [Ski Bluewood webcams](https://blue
 **Status: capture pipeline is live on two platforms.** A GitHub Actions cron job has been
 fetching the two Bluewood cams every 15 minutes since 2026-07-16 and committing them to
 `archive/` on `main`. A Raspberry Pi Zero W (hostname `timelapse-pi`) is now deployed and
-capturing all four cams (the two Bluewood cams plus two Seattle dev cams) on a systemd
-timer, with a home-network status page live at `http://timelapse-pi.local:8080/`. The two
-capture paths run in parallel during the hand-off trial (see `docs/open-questions.md` #1).
-The video builder (turning the archive into an mp4) is not built yet.
+capturing all six cams (the two Bluewood cams, two Seattle dev cams, and two North Carolina
+cams — the last two Pi-only) on a systemd timer, with a home-network status page live at
+`http://timelapse-pi.local:8080/`. The Bluewood capture path runs in parallel on both
+platforms during the hand-off trial (see `docs/open-questions.md` #1). The video builder
+(turning the archive into an mp4) is not built yet.
 
 ## The idea
 
@@ -21,7 +22,7 @@ Bluewood publishes two webcams (Summit and Base). This project will:
    or arbitrary date ranges).
 
 The archive is organized `archive/<site>/<cam>/YYYY/MM/` — cameras grouped by source
-location (`bluewood/`, `seattle/`).
+location (`bluewood/`, `seattle/`, `north-carolina/`).
 
 The defining constraint: Bluewood is **100% off-grid**. The webcams only work while the
 resort's generator is running, so outages are the norm — every night, every closed day, the
@@ -33,13 +34,15 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 | --- | --- |
 | [docs/design.md](docs/design.md) | Architecture: the capture job, the video builder, storage layout, and outage/stale-frame handling |
 | [docs/open-questions.md](docs/open-questions.md) | Decisions made so far and what's still open (output format, gap handling in video, long-term storage), with options and recommendations |
+| [docs/sd-card-migration.md](docs/sd-card-migration.md) | Runbook for migrating the Pi's SD card from 4GB to 64GB (documented, not yet executed) |
 
 ## What's implemented
 
 - `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by GitHub Actions)
-- `capture/config.pi.yaml` — the Pi's config: all four cams (two Seattle KING 5 cams, added
-  to keep developing the pipeline while Bluewood was off-grid, plus the two Bluewood cams for
-  the hand-off trial), plus a `capture_log` path
+- `capture/config.pi.yaml` — the Pi's config: all six cams (two Seattle KING 5 cams, added
+  to keep developing the pipeline while Bluewood was off-grid; the two Bluewood cams for
+  the hand-off trial; and two North Carolina cams — WLOS-hosted PNG snapshots of the UNCA
+  tower and the Nantahala Outdoor Center, Pi-only), plus a `capture_log` path
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
 - `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
@@ -70,6 +73,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - The video builder (archive → mp4)
 - Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
   in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
+- SD card migration (4GB → 64GB) — process is documented
+  ([docs/sd-card-migration.md](docs/sd-card-migration.md)) but not yet executed (see
+  `docs/open-questions.md` #11)
 
 ## Quick summary of decisions so far
 
@@ -79,7 +85,7 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) now captures all four cams via
+- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) now captures all six cams via
   a systemd timer; GitHub Actions still captures Bluewood in parallel during the hand-off
   trial, to be disabled once the Pi proves reliable (see `docs/open-questions.md` #1).
 - **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —

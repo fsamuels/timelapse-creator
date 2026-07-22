@@ -27,6 +27,13 @@
   two Bluewood cams (`summit`, `base`), so the Pi captures all four. GitHub Actions keeps
   capturing Bluewood in parallel via `config.yaml` during the hand-off trial
   (`docs/open-questions.md` #1).
+- **North Carolina cams added (Pi-only).** Two WLOS-hosted PNG snapshot cams — the UNCA
+  tower cam and the Nantahala Outdoor Center cam — were added to `capture/config.pi.yaml`
+  under a new `north-carolina` site, bringing the Pi to six cams total. No config.yaml /
+  GitHub Actions equivalent; these are Pi-only from the start, unrelated to the Bluewood
+  hand-off trial. Fetched the same way as every other `type: image` cam (`fetch_image`) —
+  the fact that these happen to be PNGs rather than JPEGs doesn't matter to the fetch or
+  stale-detection path, since both just compare raw bytes.
 
 ## Architecture: two decoupled pieces
 
@@ -92,15 +99,22 @@ archive/
     queenanne/
       2026/07/
         ...
+  north-carolina/
+    unca-tower/
+      2026/07/
+        ...
+    nantahala-outdoor-center/
+      2026/07/
+        ...
 ```
 
 - The archive is grouped `archive/<site>/<cam>/YYYY/MM/`. Each cam declares its
   `site` in the config (`config.yaml`'s cams are `bluewood`; `config.pi.yaml`'s are
-  `seattle`), and `capture/main.py` writes to `archive_root / site / name`. Grouping by
-  site keeps the two Bluewood cams together and separate from the Seattle
-  pipeline-development cams — and lets a single config eventually capture both sites at
-  once (the Pi hand-off, `docs/open-questions.md` #1) without them colliding in one flat
-  namespace.
+  `seattle` and `north-carolina`), and `capture/main.py` writes to `archive_root / site /
+  name`. Grouping by site keeps the two Bluewood cams together and separate from the
+  Seattle pipeline-development cams and the North Carolina cams — and lets a single config
+  capture multiple sites at once (the Pi hand-off, `docs/open-questions.md` #1) without them
+  colliding in one flat namespace.
 - Filenames are timestamps with microsecond precision (avoids collisions if two frames for
   the same cam are ever saved within the same second) at a **fixed UTC-8 offset** — not
   IANA `America/Los_Angeles` — so they read close to Pacific local time without adopting
@@ -123,7 +137,7 @@ archive/
 **Deployed and running** (see `docs/open-questions.md` #1): a systemd timer runs the same
 `capture/` code every 15 minutes on the Pi (hostname `timelapse-pi`), writing to local disk
 at `/var/lib/timelapse/archive` instead of committing to git (see storage below), and
-capturing all four cams. GitHub Actions keeps running in parallel for a ~1-2 week trial to
+capturing all six cams. GitHub Actions keeps running in parallel for a ~1-2 week trial to
 confirm the Pi is reliable, then its schedule is disabled (manual `workflow_dispatch` stays
 available as an emergency fallback). Still to do before the trial ends: migrate the existing
 git-committed frames onto the Pi's storage so the archive has one home going forward, and
@@ -273,6 +287,14 @@ Google Photos was considered and set aside for *raw frame* storage specifically 
 album/browsing model and 2025 API restrictions to app-created content are a poor fit for the
 exact-byte round-tripping that stale-frame hash detection depends on — but remains a good fit
 for finished videos (see deferred ideas below), which are naturally photo-library-shaped.
+
+**SD card capacity (documented, not yet executed):** the Pi currently boots from a 4GB card.
+With six cams now capturing (up from four), that card's runway is shorter than originally
+planned — see `docs/open-questions.md` #11 for the growth estimate. The migration process
+to a 64GB card is written up as a runbook in **`docs/sd-card-migration.md`**: a fresh OS
+install on the new card, `rsync` the existing archive over, verify, then physically swap
+cards — preferred over a full-disk clone since it also re-validates `deploy/pi/README.md`'s
+bring-up steps and avoids resizing a cloned partition table. Not yet executed.
 
 ## Deferred / follow-on ideas
 
