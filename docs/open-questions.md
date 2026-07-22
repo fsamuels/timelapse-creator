@@ -9,7 +9,12 @@ recommendations. None of these are locked in yet.
 2026-07-16 (free shipping, ETA ~12-18 days) and will likely take over capture once it
 arrives — the hand-off plan itself is decided too, see the new section below.
 
-### The Pi hand-off plan (decided, execution pending Pi arrival)
+### The Pi hand-off plan (decided; trial started)
+
+**Trial status:** the two Bluewood cams (`summit`, `base`) have been added to
+`capture/config.pi.yaml`, so the Pi now captures all four cams — this starts the
+parallel-capture trial below. GitHub Actions continues capturing Bluewood via
+`capture/config.yaml` during the comparison window.
 
 - **Scheduling:** a systemd timer on the Pi, not cron — better logging (`journalctl`) and
   restart semantics, and it's a natural place to also manage the bucket-sync job and the web

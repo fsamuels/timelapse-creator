@@ -35,8 +35,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 ## What's implemented
 
 - `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by GitHub Actions)
-- `capture/config.pi.yaml` — a second config, for the Pi: two Seattle (KING 5) cams to keep
-  developing the pipeline while Bluewood is off-grid, plus a `capture_log` path
+- `capture/config.pi.yaml` — the Pi's config: all four cams (two Seattle KING 5 cams, added
+  to keep developing the pipeline while Bluewood was off-grid, plus the two Bluewood cams for
+  the hand-off trial), plus a `capture_log` path
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
 - `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
