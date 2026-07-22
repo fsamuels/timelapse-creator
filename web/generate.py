@@ -176,48 +176,56 @@ def build_page_data(archive_dir, log_path, now, stale_after):
 
 # --- rendering -------------------------------------------------------------
 
-_STYLE = """
-:root {
-  --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
-  --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
-  --l0: #ebedf0; --l1: #9be9a8; --l2: #40c463; --l3: #30a14e; --l4: #216e39;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22;
-    --border: #30363d; --ok: #3fb950; --stale: #d29922;
-    --l0: #161b22; --l1: #0e4429; --l2: #006d32; --l3: #26a641; --l4: #39d353;
-  }
-}
-* { box-sizing: border-box; }
-body { margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-main { max-width: 900px; margin: 0 auto; }
-h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-h2 { font-size: 1.05rem; margin: 2rem 0 .75rem; }
-.sub { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }
-th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase;
-  letter-spacing: .03em; }
-.badge { display: inline-block; padding: .1rem .5rem; border-radius: 2rem; font-size: .8rem;
-  font-weight: 600; }
-.badge.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
-.badge.stale { color: var(--stale); background: color-mix(in srgb, var(--stale) 18%, transparent); }
-.muted { color: var(--muted); }
-.cam-block { margin: 1.25rem 0; }
-.cam-name { font-weight: 600; margin-bottom: .4rem; }
-.heatmap { display: flex; gap: 3px; overflow-x: auto; padding-bottom: .25rem; }
-.week { display: flex; flex-direction: column; gap: 3px; }
-.day { width: 11px; height: 11px; border-radius: 2px; background: var(--l0); }
-.day.future { background: transparent; }
-.day.l1 { background: var(--l1); } .day.l2 { background: var(--l2); }
-.day.l3 { background: var(--l3); } .day.l4 { background: var(--l4); }
-.legend { display: flex; align-items: center; gap: 4px; color: var(--muted);
-  font-size: .78rem; margin-top: .5rem; }
-.legend .day { display: inline-block; }
-footer { color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
-  border-top: 1px solid var(--border); padding-top: 1rem; }
+_STYLE = f"""
+:root {{
+  --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22;
+  --border: #30363d; --ok: #3fb950; --stale: #d29922;
+  --l0:#161b22; --l1:#0b2c5c; --l2:#15468a; --l3:#2b6cb8; --l4:#4c9aff;
+}}
+@media (prefers-color-scheme: light) {{
+  :root {{
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
+    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
+    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
+  }}
+}}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
+main {{ max-width: 900px; margin: 0 auto; }}
+h1 {{ font-size: 1.5rem; margin: 0 0 .25rem; }}
+h2 {{ font-size: 1.05rem; margin: 2rem 0 .75rem; }}
+.sub {{ color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }}
+th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .03em; }}
+.badge {{ display: inline-block; padding: .1rem .5rem; border-radius: 2rem; font-size: .8rem;
+  font-weight: 600; }}
+.badge.ok {{ color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }}
+.badge.stale {{ color: var(--stale);
+  background: color-mix(in srgb, var(--stale) 18%, transparent); }}
+.muted {{ color: var(--muted); }}
+.cam-block {{ margin: 1.25rem 0; }}
+.cam-name {{ font-weight: 600; margin-bottom: .4rem; }}
+.heatmap {{ overflow-x: auto; padding-bottom: .25rem; }}
+.hm-grid {{ display: inline-grid;
+  grid-template-columns: 28px repeat({HEATMAP_WEEKS}, 11px);
+  grid-auto-rows: 11px; gap: 3px; align-items: center; }}
+.hm-corner {{ width: 28px; height: 11px; }}
+.hm-month {{ font-size: .7rem; line-height: 11px; color: var(--muted);
+  white-space: nowrap; overflow: visible; }}
+.hm-wd {{ font-size: .7rem; line-height: 11px; color: var(--muted);
+  text-align: right; padding-right: 4px; white-space: nowrap; }}
+.day {{ width: 11px; height: 11px; border-radius: 2px; background: var(--l0); }}
+.day.future {{ background: transparent; }}
+.day.l1 {{ background: var(--l1); }} .day.l2 {{ background: var(--l2); }}
+.day.l3 {{ background: var(--l3); }} .day.l4 {{ background: var(--l4); }}
+.legend {{ display: flex; align-items: center; gap: 4px; color: var(--muted);
+  font-size: .78rem; margin-top: .5rem; }}
+.legend .day {{ display: inline-block; }}
+footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid var(--border); padding-top: 1rem; }}
 """
 
 
@@ -249,20 +257,47 @@ def _status_row(cam_name, health, now):
     )
 
 
+_WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
+
+
 def _heatmap_html(grid):
-    weeks = []
-    for week in grid:
-        days = []
-        for cell in week:
-            cls = "day future" if cell["future"] else f"day l{cell['level']}"
+    """Render a GitHub-style grid with month labels on top and weekday labels on the left.
+
+    ``grid`` is a list of week-columns (oldest -> newest), each a list of 7 day
+    cells ordered Sunday..Saturday (see heatmap_grid). Labels are placed via a
+    single CSS grid so they line up with the 11px cells / 3px gaps.
+    """
+    cells = ['<div class="hm-corner"></div>']
+
+    prev_month = None
+    last_label_col = -3
+    for i, week in enumerate(grid):
+        first_date = week[0]["date"]
+        month_key = (first_date.year, first_date.month)
+        if month_key != prev_month and (i - last_label_col) >= 3:
+            label = first_date.strftime("%b")
+            last_label_col = i
+        else:
+            label = ""
+        prev_month = month_key
+        cells.append(f'<div class="hm-month">{label}</div>')
+
+    for row in range(7):
+        cells.append(f'<div class="hm-wd">{_WEEKDAY_LABELS.get(row, "")}</div>')
+        for week in grid:
+            cell = week[row]
             if cell["future"]:
+                cls = "day future"
                 title = ""
             else:
                 n = cell["count"]
-                title = f" title=\"{n} frame{'s' if n != 1 else ''} on {cell['date'].isoformat()}\""
-            days.append(f'<div class="{cls}"{title}></div>')
-        weeks.append('<div class="week">' + "".join(days) + "</div>")
-    return '<div class="heatmap">' + "".join(weeks) + "</div>"
+                title = (
+                    f' title="{cell["date"].isoformat()} · ' f'{n} image{"s" if n != 1 else ""}"'
+                )
+                cls = f"day l{cell['level']}"
+            cells.append(f'<div class="{cls}"{title}></div>')
+
+    return '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div></div>"
 
 
 def render_html(page_data, now, stale_after):
