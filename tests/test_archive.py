@@ -74,3 +74,18 @@ def test_save_frame_uses_fixed_pacific_offset_suffix(tmp_path):
     path = archive.save_frame(b"jpeg bytes", tmp_path)
 
     assert path.stem.endswith("-0800")
+
+
+def test_parse_frame_time_roundtrips_save_frame(tmp_path):
+    path = archive.save_frame(b"jpeg bytes", tmp_path)
+
+    parsed = archive.parse_frame_time(path)
+    assert parsed.strftime(archive.FRAME_TIME_FORMAT) == path.stem
+
+
+def test_parse_frame_time_recovers_fields_and_offset():
+    parsed = archive.parse_frame_time("2026-07-16T12-10-05-166615-0800.jpg")
+
+    assert (parsed.year, parsed.month, parsed.day) == (2026, 7, 16)
+    assert (parsed.hour, parsed.minute, parsed.second) == (12, 10, 5)
+    assert parsed.utcoffset() == archive.PACIFIC.utcoffset(None)

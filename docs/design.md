@@ -173,19 +173,27 @@ Three options were discussed (decision pending — see open questions):
 
 ## Component 3: the web interface
 
-**Not implemented yet; stack and shape decided** (see `docs/open-questions.md` #9). Two
-goals: confirm the capture pipeline is still working, and show a GitHub-style activity graph
-of images downloaded per day.
+**Implemented** as `web/generate.py` (see `docs/open-questions.md` #9). Two goals: confirm
+the capture pipeline is still working, and show a GitHub-style activity graph of images
+downloaded per day.
 
-- **Runs on the Pi**, home network only. A small Python script (reusing `capture/archive.py`'s
-  filename/timestamp parsing) regenerates a static HTML page after each capture run, served
-  by nginx or `python -m http.server` under systemd — no persistent app server, matching the
-  data's own cadence (it only changes every 15 minutes) and the project's existing batch-job
-  shape rather than adding an always-on service to a single-core, 512MB Pi Zero W.
+- **Runs on the Pi**, home network only. `web/generate.py` regenerates a single
+  self-contained static HTML page (inline CSS, no external assets, light/dark aware) —
+  served by `python -m http.server` under `deploy/pi/timelapse-web.service`, no persistent
+  app server. It reuses `capture/archive.py`'s `parse_frame_time` (the inverse of
+  `save_frame`'s naming) for the timestamps. This matches the data's own cadence (it only
+  changes every 15 minutes) and the project's batch-job shape rather than adding an
+  always-on service to a single-core, 512MB Pi Zero W.
+- **Regeneration:** the capture service runs it as an `ExecStartPost` after each capture,
+  so the page refreshes every run. Because the generator reads `archive_dir` from the
+  config, it shows exactly the frames in that directory — on the Pi, only Pi-captured
+  frames (the "Pi-era only" activity scope), with no source-era filtering logic of its own.
 - **Activity heatmap:** derived directly from archive filenames — no new data source needed.
-- **Health/status view:** last successful frame per cam, last-run outcome, a staleness flag.
-  Needs the persisted `capture.log` from Component 1 above — status can't be derived from
-  successful frames alone, since a stuck/failing cam produces *no* new archive entries.
+  One contribution-style grid per cam, grouped under its site.
+- **Health/status view:** last frame per cam, how long ago, a staleness flag (`--stale-hours`,
+  default 1), and the last-run outcome. The outcome needs the persisted `capture.log` from
+  Component 1 — status can't be derived from successful frames alone, since a stuck/failing
+  cam produces *no* new archive entries.
 - **Remote access:** not built now; Tailscale is the documented future option, and would also
   cover remote SSH to the Pi for maintenance, not just this page.
 
