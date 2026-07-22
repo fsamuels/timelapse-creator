@@ -83,14 +83,16 @@ Not mutually exclusive — the first two are presets of the third.
 - **On-demand date ranges** ✅ built — `python -m video.main <dir> --from ... --to ... -o out.mp4`.
   Both a fixed-cadence webcam archive directory and a normalize/align.py output directory
   work as `<dir>`; see `docs/design.md` Component 2.
-- **Daily clips** — a short sunrise-to-sunset clip per day, auto-generated each night. **Not
-  built** — a preset on top of the same `video/frames.py`/`video/encode.py` machinery.
-- **Season-long video** — snow accumulating and melting over the whole winter. **Not
-  built** — same, plus a subsampling stage (e.g. "one frame per day at noon") that doesn't
-  exist yet.
+- **Daily clips** ✅ built — `python -m video.daily_clip <cam-dir> -o <output-dir> [--date
+  YYYY-MM-DD]`. Defaults to yesterday (Pacific) with dark/night frames dropped, so it's
+  runnable unattended each night with no arguments — see `docs/design.md` Component 2.
+- **Season-long video** ✅ built — `python -m video.season_video <cam-dir> -o out.mp4
+  [--fps N | --proportional --duration N]`. Subsamples to one frame/day (closest to
+  `--at-hour`, default noon) via the new `frames.subsample_daily`, so snow accumulating and
+  melting over the whole winter plays back at a watchable length.
 
-**Decided and built:** the on-demand CLI is the core; daily/season presets remain a
-follow-on, not needed until the on-demand path proves out.
+**Decided and built:** the on-demand CLI is the core, and the daily-clip/season-video presets
+are now built on top of it.
 
 A second, new capability landed alongside the on-demand CLI, not originally scoped by this
 question: **proportional (time-accurate) duration** — `--proportional --duration N` holds
@@ -343,8 +345,10 @@ than relying on the estimate above.
 - [x] Build the video builder (`docs/design.md` Component 2) — `video/` (`frames.py`,
       `encode.py`, `main.py`): on-demand CLI over either a webcam archive directory or a
       normalize/align.py output directory, uniform-fps and proportional-duration timing
-      modes, optional dark-frame/dedupe filters, ffmpeg concat-demuxer H.264 encode. Daily/
-      season presets and a subsampling stage remain follow-ons.
+      modes, optional dark-frame/dedupe filters, ffmpeg concat-demuxer H.264 encode.
+- [x] Daily-clip / season-video presets (question 3) — `video/daily_clip.py` and
+      `video/season_video.py`, plus a new `frames.subsample_daily` (one frame/day) for the
+      season preset.
 - [x] Decide output format (question 3) and gap-handling-in-video (question 4) — on-demand
       CLI is the core (presets deferred); gaps are skipped silently, no timestamp overlay.
 - [ ] Once GitHub Actions is disabled and archived frames are removed from git, lock `main`

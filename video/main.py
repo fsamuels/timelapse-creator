@@ -16,7 +16,6 @@ the real time-gap before the next one, capped so no single gap dominates
 
 import argparse
 import logging
-import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -143,11 +142,9 @@ def main():
         durations = frames.uniform_durations(selected, args.fps)
 
     log.info("encoding %d frame(s) (%.1fs) -> %s", len(selected), sum(durations), args.output)
-    script = encode.build_concat_script(
-        [(path, duration) for (path, _ts), duration in zip(selected, durations)]
+    encode.encode_frames(
+        [(path, duration) for (path, _ts), duration in zip(selected, durations)], args.output
     )
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        encode.run_ffmpeg(script, args.output, tmp_dir)
     log.info("wrote %s", args.output)
 
 
