@@ -32,7 +32,7 @@ def main():
     capture_log_path = config.get("capture_log")
 
     for name, cam in config["cams"].items():
-        cam_dir = archive_root / name
+        cam_dir = archive_root / cam["site"] / name
         try:
             data = fetch_frame(cam)
         except Exception as exc:

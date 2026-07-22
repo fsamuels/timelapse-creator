@@ -2,8 +2,10 @@ archive_dir: archive
 
 cams:
   summit:
+    site: bluewood  # frames land under archive/<site>/<cam>/...
     type: image  # image | stream
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?"
   base:
+    site: bluewood
     type: image
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?"
