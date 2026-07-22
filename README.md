@@ -13,7 +13,7 @@ Actions no longer captures on a schedule —
 the earlier Bluewood-only cron job has been retired now that the Pi hand-off trial is
 complete (see `docs/open-questions.md` #1); `workflow_dispatch` remains as a manual
 emergency-capture fallback. The video builder (turning frames into an mp4) now has a first
-pass built — see `video/` below.
+pass built, plus daily-clip and season-video presets on top of it — see `video/` below.
 
 ## The idea
 
@@ -142,15 +142,19 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   <input-dir> -o output/out.mp4 [--fps N | --proportional --duration N] [--from YYYY-MM-DD]
   [--to YYYY-MM-DD] [--drop-dark] [--dedupe] [--label-date] [--label-filename]
   [--white-balance --white-balance-patch T,L,B,R --white-balance-target path]`. Outage gaps
-  are skipped silently, no timestamp overlay. Daily-clip/season-video presets and a
-  subsampling stage are documented follow-ons, not built.
+  are skipped silently, no timestamp overlay. Two presets are built on top of the same
+  `frames.py`/`encode.py` machinery: `video/daily_clip.py` (one day's clip from a cam
+  directory, defaulting to yesterday (Pacific) with dark/night frames dropped, so it's
+  runnable unattended: `python -m video.daily_clip archive/bluewood/summit -o
+  daily/bluewood/summit [--date YYYY-MM-DD]`) and `video/season_video.py` (subsamples a cam
+  directory to one frame/day, closest to `--at-hour` (default noon), then encodes the whole
+  range as one video: `python -m video.season_video archive/bluewood/summit -o season.mp4
+  [--fps N | --proportional --duration N]`).
 - `output/` — build artifacts: `normalize/`'s aligned-frame batches and `video/`'s rendered
   mp4s. Gitignored and regeneratable from `archive/`, not source.
 
 ## Not implemented yet
 
-- Daily-clip / season-video presets and subsampling on top of the video builder — the
-  on-demand CLI (`video/`) is built; these are follow-ons on the same machinery
 - Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
   in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
 - SD card migration (4GB → 64GB) — process is documented
@@ -181,8 +185,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   webcam archive directory or a `normalize/` output directory, with uniform-fps and
   proportional (time-accurate) duration modes, optional dark-frame/dedupe filters, and an
   ffmpeg concat-demuxer H.264 encode. Outage gaps are skipped silently, no timestamp overlay
-  (see `docs/open-questions.md` #3/#4).
+  (see `docs/open-questions.md` #3/#4). Daily-clip and season-video presets are **built** on
+  top of the same machinery (`video/daily_clip.py`, `video/season_video.py`).
 
-Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): daily-clip and
-season-video presets on top of the video builder, and which bucket provider to use for frame
-backup.
+Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): which bucket
+provider to use for frame backup.
