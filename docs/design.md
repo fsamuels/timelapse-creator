@@ -180,12 +180,17 @@ the capture pipeline is still working, and show a GitHub-style activity graph of
 downloaded per day.
 
 - **Runs on the Pi**, home network only. `web/generate.py` regenerates a single
-  self-contained static HTML page (inline CSS, no external assets, light/dark aware) —
-  served by `python -m http.server` under `deploy/pi/timelapse-web.service`, no persistent
-  app server. It reuses `capture/archive.py`'s `parse_frame_time` (the inverse of
+  self-contained static HTML page (inline CSS, no external assets) — served by
+  `python -m http.server` under `deploy/pi/timelapse-web.service`, no persistent app
+  server. It reuses `capture/archive.py`'s `parse_frame_time` (the inverse of
   `save_frame`'s naming) for the timestamps. This matches the data's own cadence (it only
   changes every 15 minutes) and the project's batch-job shape rather than adding an
   always-on service to a single-core, 512MB Pi Zero W.
+- **Theme:** a Dark/Light/System dropdown, defaulting to dark on every load (an inline
+  `onchange` attribute flips a `data-theme` attribute on `<html>`, no `<script>` tag,
+  matching the "no external assets" self-contained requirement enforced by
+  `tests/test_generate.py`). System still tracks `prefers-color-scheme` if picked. No
+  persistence — deliberately, since the page already reloads from scratch every 15 minutes.
 - **Regeneration:** the capture service runs it as an `ExecStartPost` after each capture,
   so the page refreshes every run. Because the generator reads `archive_dir` from the
   config, it shows exactly the frames in that directory — on the Pi, only Pi-captured

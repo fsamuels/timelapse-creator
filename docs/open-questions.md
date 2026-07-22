@@ -174,8 +174,9 @@ graph of images downloaded per day.
 
 **Implemented and deployed** as `web/generate.py`, matching the decided stack below: it reuses
 `capture/archive.py`'s `parse_frame_time` and regenerates one self-contained static HTML
-page (inline CSS, light/dark aware), run as an `ExecStartPost` on the capture service and
-served by `deploy/pi/timelapse-web.service` (`python -m http.server`). See `docs/design.md`
+page (inline CSS, a Dark/Light/System theme dropdown defaulting to dark, no persistence),
+run as an `ExecStartPost` on the capture service and served by
+`deploy/pi/timelapse-web.service` (`python -m http.server`). See `docs/design.md`
 Component 3. It's live on the Pi at `http://timelapse-pi.local:8080/` (home network only).
 
 **Stack — decided:** a small Python script (reusing `capture/archive.py`'s filename/timestamp
