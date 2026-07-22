@@ -16,7 +16,7 @@ Everything downstream (filtering, duration computation) works on a single
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from PIL import Image, ImageStat
@@ -102,6 +102,24 @@ def drop_duplicate_frames(frame_list):
         kept.append((path, ts))
         prev_hash = digest
     return kept
+
+
+def subsample_daily(frame_list, at_hour=12.0):
+    """Keep one frame per calendar date -- whichever frame's time-of-day is
+    closest to at_hour:00 -- for a season-long video where a multi-month
+    archive needs to collapse to a watchable length rather than play every
+    15-minute capture.
+
+    Ties (equally close on either side) keep the earlier frame.
+    """
+    best = {}
+    for path, ts in frame_list:
+        target = ts.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=at_hour)
+        distance = abs((ts - target).total_seconds())
+        current = best.get(ts.date())
+        if current is None or (distance, ts) < (current[0], current[2]):
+            best[ts.date()] = (distance, path, ts)
+    return [(path, ts) for _, path, ts in (best[day] for day in sorted(best))]
 
 
 def uniform_durations(frame_list, fps):

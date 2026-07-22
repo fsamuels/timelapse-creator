@@ -10,7 +10,8 @@ capturing all six cams (the two Bluewood cams, two Seattle dev cams, and two Nor
 cams — the last two Pi-only) on a systemd timer, with a home-network status page live at
 `http://timelapse-pi.local:8080/`. The Bluewood capture path runs in parallel on both
 platforms during the hand-off trial (see `docs/open-questions.md` #1). The video builder
-(turning frames into an mp4) now has a first pass built — see `video/` below.
+(turning frames into an mp4) now has a first pass built, plus daily-clip and season-video
+presets on top of it — see `video/` below.
 
 ## The idea
 
@@ -81,13 +82,17 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   (drop residual exact-duplicate frames) filters. Encodes via ffmpeg's concat demuxer to
   H.264/`yuv420p` mp4: `python -m video.main <input-dir> -o out.mp4 [--fps N | --proportional
   --duration N] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--drop-dark] [--dedupe]`. Outage gaps
-  are skipped silently, no timestamp overlay. Daily-clip/season-video presets and a
-  subsampling stage are documented follow-ons, not built. See `docs/design.md` Component 2.
+  are skipped silently, no timestamp overlay. See `docs/design.md` Component 2.
+  Two presets are built on top of the same `frames.py`/`encode.py` machinery: `video/
+  daily_clip.py` (one day's clip from a cam directory, defaulting to yesterday (Pacific) with
+  dark/night frames dropped, so it's runnable unattended: `python -m video.daily_clip
+  archive/bluewood/summit -o daily/bluewood/summit [--date YYYY-MM-DD]`) and `video/
+  season_video.py` (subsamples a cam directory to one frame/day, closest to `--at-hour`
+  (default noon), then encodes the whole range as one video: `python -m video.season_video
+  archive/bluewood/summit -o season.mp4 [--fps N | --proportional --duration N]`).
 
 ## Not implemented yet
 
-- Daily-clip / season-video presets and subsampling on top of the video builder — the
-  on-demand CLI (`video/`) is built; these are follow-ons on the same machinery
 - Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
   in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
 - SD card migration (4GB → 64GB) — process is documented
@@ -117,8 +122,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   webcam archive directory or a `normalize/` output directory, with uniform-fps and
   proportional (time-accurate) duration modes, optional dark-frame/dedupe filters, and an
   ffmpeg concat-demuxer H.264 encode. Outage gaps are skipped silently, no timestamp overlay
-  (see `docs/open-questions.md` #3/#4).
+  (see `docs/open-questions.md` #3/#4). Daily-clip and season-video presets are **built** on
+  top of the same machinery (`video/daily_clip.py`, `video/season_video.py`).
 
-Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): daily-clip and
-season-video presets on top of the video builder, and which bucket provider to use for frame
-backup.
+Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): which bucket
+provider to use for frame backup.

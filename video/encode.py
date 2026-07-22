@@ -6,6 +6,7 @@ and unit-tested; run_ffmpeg shells out to the real ffmpeg binary and isn't
 """
 
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -64,3 +65,13 @@ def run_ffmpeg(concat_script, output_path, tmp_dir):
         capture_output=True,
         check=True,
     )
+
+
+def encode_frames(frame_durations, output_path):
+    """Build a concat script for [(path, duration), ...] and encode it to
+    output_path -- the build-script/tempdir/run_ffmpeg wiring shared by
+    video/main.py and the daily-clip/season-video presets.
+    """
+    script = build_concat_script(frame_durations)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        run_ffmpeg(script, output_path, tmp_dir)

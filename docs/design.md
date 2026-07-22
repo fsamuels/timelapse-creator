@@ -210,11 +210,38 @@ Pipeline:
    universal-playback decision below — unchanged from the original design.
 
 **Not yet built** (documented as follow-on, not this pass):
-- Daily-clip / season-video presets on top of the same `frames.py`/`encode.py` machinery.
 - A title/date-range card at the start (`drawtext`) — cheap to add, deferred for scope.
 - Any resolution/downscale controls — output resolution is whatever the input frames
   already are (webcam frames are fixed-size per cam; drone batches are already resized via
   `normalize`'s `--size`).
+
+### Daily-clip and season-video presets (implemented)
+
+Thin wrappers over the same `frames.py`/`encode.py` machinery above, for the two use cases
+`video/main.py`'s on-demand CLI doesn't make convenient on its own: an unattended nightly job,
+and a full-season video short enough to actually watch.
+
+- **`video/daily_clip.py`** — one day's clip from a single cam directory:
+  `python -m video.daily_clip archive/bluewood/summit -o daily/bluewood/summit [--date
+  YYYY-MM-DD]`. `--date` defaults to yesterday (Pacific, matching `capture/archive.py`'s own
+  timestamp convention) so it's runnable unattended every night with no arguments. Drops dark
+  (night) frames by default (`--no-drop-dark` to keep them) — a "sunrise-to-sunset" clip —
+  then encodes at a fixed `--fps` (default 24). Output is named `<date>.mp4` in the given
+  output directory.
+- **`video/season_video.py`** — a single video spanning a cam's whole date range (or
+  `--from`/`--to` slice), subsampled to one frame per calendar day via the new
+  `frames.subsample_daily` (picks whichever frame is closest to `--at-hour`, default noon;
+  ties go to the earlier frame) so a multi-month archive collapses to a watchable length
+  instead of hours of near-identical frames. Same two timing modes as `video/main.py`: fixed
+  `--fps` (default 8, since the frame count is already ~1/day) or `--proportional
+  --duration N` (a multi-day capture outage reads as a pause in the video rather than being
+  invisible, since the subsampled frames' real day-to-day gaps still vary when a day is
+  missing).
+
+Both reuse `frames.load_frames`/`filter_date_range`/`uniform_durations`/
+`proportional_durations` and a new `encode.encode_frames` helper (the
+build-script/tempdir/run_ffmpeg wiring `video/main.py` also uses) rather than duplicating any
+of Component 2's core pipeline.
 
 ### How outages appear in the output (decided)
 
