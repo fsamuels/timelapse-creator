@@ -200,13 +200,25 @@ Options considered and set aside for now:
   no explicit era-filtering code: it's just a consequence of pointing at the Pi's local
   archive rather than the repo's git-committed GitHub Actions history.
 - **Health/status** — last successful frame per cam, last-run outcome, a "stale — no update
-  in over N hours" flag. This *does* need new data: see question 9.
+  in over N hours" flag, and now per-cam + total disk usage (`shutil.disk_usage` on
+  `archive_dir`). This *does* need new data: see question 9.
 
-**Access — decided:** home network only for now. Tailscale (private VPN mesh, no port
-forwarding) is noted as a documented future improvement rather than built now — and would
-also solve remote SSH access to the Pi for maintenance, not just web UI access, so it may be
-worth revisiting sooner than the web interface itself if remote maintenance access is wanted
-in the meantime.
+**Browsing the raw archive (implemented):** each cam's name in the status table links out
+to its live CameraFTP image, and `web/generate.py` symlinks `www/archive` to `archive_dir`
+on every regeneration, so `python -m http.server` serves the whole frame archive as a
+plain directory listing at `/archive/` next to the status page — no copying, no new code
+in the web server. Deliberately full exposure, not just a thumbnail: same "home network
+only, no auth" trust model as the rest of the page (see Access below), and it's the
+groundwork for a proper gallery view later (paginated by day/cam instead of a raw file
+tree) without having to revisit what's exposed.
+
+**Access — decided:** home network only for now, and that now covers the raw archive too
+(the `/archive/` symlink above), not just the generated page — the archive was fine to
+expose since the trust boundary (home network, no auth) doesn't change. Tailscale (private
+VPN mesh, no port forwarding) is noted as a documented future improvement rather than built
+now — and would also solve remote SSH access to the Pi for maintenance, not just web UI
+access, so it may be worth revisiting sooner than the web interface itself if remote
+maintenance access is wanted in the meantime.
 
 **Still open:** whether the LAN-only page needs any auth at all, or explicitly trusts the
 home network (leaning the latter, but worth a conscious decision rather than an accidental

@@ -10,6 +10,9 @@ log, then writes a single self-contained HTML page with two views:
   * Activity heatmap — a GitHub-style contribution grid of frames captured per
     day, per cam.
 
+Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
+so it's directly browsable, and reports per-cam and total disk usage.
+
 Designed to run on the Pi after each capture (see deploy/pi/), regenerating the
 page — no persistent app server. It reads ``archive_dir`` from the config, so it
 naturally shows exactly the frames in that directory (on the Pi: Pi-captured
@@ -19,6 +22,7 @@ frames) with no source-era filtering logic of its own.
 import argparse
 import html
 import json
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -50,6 +54,43 @@ def scan_archive(archive_dir):
         if cams:
             sites[site_dir.name] = cams
     return sites
+
+
+def frame_bytes(frames):
+    """Total size in bytes of a list of frame files."""
+    return sum(f.stat().st_size for f in frames)
+
+
+def disk_usage(archive_dir):
+    """Return ``{"total", "used", "free"}`` bytes for archive_dir's filesystem.
+
+    None if archive_dir doesn't exist yet (nothing captured, or a fresh checkout).
+    """
+    archive_dir = Path(archive_dir)
+    if not archive_dir.is_dir():
+        return None
+    usage = shutil.disk_usage(archive_dir)
+    return {"total": usage.total, "used": usage.used, "free": usage.free}
+
+
+def ensure_archive_link(www_dir, archive_dir):
+    """Symlink ``www_dir/archive`` to archive_dir.
+
+    Lets http.server serve the raw frames (browsable directory listing, no
+    copying) alongside the generated status page. A no-op if the link already
+    points at archive_dir, and leaves anything else already at that path alone.
+    """
+    archive_dir = Path(archive_dir).resolve()
+    if not archive_dir.is_dir():
+        return  # nothing captured yet
+    link = Path(www_dir) / "archive"
+    if link.is_symlink():
+        if link.resolve() == archive_dir:
+            return
+        link.unlink()
+    elif link.exists():
+        return
+    link.symlink_to(archive_dir, target_is_directory=True)
 
 
 def read_capture_log(log_path):
@@ -140,6 +181,15 @@ def _level(count, peak):
     return min(4, 1 + int(3 * (count - 1) / peak))
 
 
+def _human_bytes(n):
+    """Render a byte count like '482 KB' or '1.3 GB'."""
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
 def _human_ago(delta):
     seconds = int(delta.total_seconds())
     if seconds < 90:
@@ -158,13 +208,15 @@ def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
 
     ``cam_config`` is the capture config's ``cams`` mapping (cam name -> dict
     with a ``url`` key), used to link each cam's name to its live image.
+
+    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None}``.
     """
     sites = scan_archive(archive_dir)
     outcomes = latest_outcomes(read_capture_log(log_path))
     cam_config = cam_config or {}
     today = now.date()
 
-    data = []
+    site_views = []
     for site, cams in sites.items():
         cam_views = []
         for cam, frames in cams.items():
@@ -174,10 +226,11 @@ def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
                     "url": cam_config.get(cam, {}).get("url"),
                     "health": cam_health(frames, outcomes.get(cam), now, stale_after),
                     "grid": heatmap_grid(daily_counts(frames), today),
+                    "bytes": frame_bytes(frames),
                 }
             )
-        data.append({"site": site, "cams": cam_views})
-    return data
+        site_views.append({"site": site, "cams": cam_views})
+    return {"sites": site_views, "disk": disk_usage(archive_dir)}
 
 
 # --- rendering -------------------------------------------------------------
@@ -235,7 +288,7 @@ footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
 """
 
 
-def _status_row(cam_name, url, health, now):
+def _status_row(cam_name, url, health, cam_bytes, now):
     if url:
         name_cell = (
             f'<a href="{html.escape(url)}" target="_blank" rel="noopener">'
@@ -266,7 +319,8 @@ def _status_row(cam_name, url, health, now):
         run_cell = '<span class="muted">—</span>'
     return (
         f"<tr><td>{name_cell}</td><td>{badge}</td>"
-        f"<td>{last_cell}</td><td>{health['frame_count']}</td><td>{run_cell}</td></tr>"
+        f"<td>{last_cell}</td><td>{health['frame_count']}</td>"
+        f"<td>{html.escape(_human_bytes(cam_bytes))}</td><td>{run_cell}</td></tr>"
     )
 
 
@@ -314,6 +368,8 @@ def _heatmap_html(grid):
 
 
 def render_html(page_data, now, stale_after):
+    sites = page_data["sites"]
+    disk = page_data["disk"]
     parts = [
         "<!doctype html>",
         '<html lang="en"><head><meta charset="utf-8">',
@@ -323,20 +379,27 @@ def render_html(page_data, now, stale_after):
         f"<style>{_STYLE}</style></head><body><main>",
         "<h1>timelapse-creator status</h1>",
         f'<p class="sub">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M %Z"))} · '
-        f'"stale" = no new frame in over {_format_hours(stale_after)}</p>',
+        f'"stale" = no new frame in over {_format_hours(stale_after)} · '
+        '<a href="archive/">browse the full archive</a></p>',
     ]
+    if disk:
+        parts.append(
+            f'<p class="sub">Disk: {html.escape(_human_bytes(disk["free"]))} free of '
+            f'{html.escape(_human_bytes(disk["total"]))} '
+            f'({html.escape(_human_bytes(disk["used"]))} used)</p>'
+        )
 
-    if not page_data:
+    if not sites:
         parts.append('<p class="muted">No frames archived yet.</p>')
 
-    for site in page_data:
+    for site in sites:
         parts.append(f"<h2>{html.escape(site['site'])}</h2>")
         parts.append(
             "<table><thead><tr><th>Cam</th><th>Status</th><th>Last frame</th>"
-            "<th>Frames</th><th>Last run</th></tr></thead><tbody>"
+            "<th>Frames</th><th>Disk</th><th>Last run</th></tr></thead><tbody>"
         )
         for cam in site["cams"]:
-            parts.append(_status_row(cam["name"], cam.get("url"), cam["health"], now))
+            parts.append(_status_row(cam["name"], cam.get("url"), cam["health"], cam["bytes"], now))
         parts.append("</tbody></table>")
         for cam in site["cams"]:
             parts.append('<div class="cam-block">')
@@ -406,7 +469,8 @@ def main():
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html_doc)
-    print(f"wrote {output} ({len(page_data)} site(s))")
+    ensure_archive_link(output.parent, archive_dir)
+    print(f"wrote {output} ({len(page_data['sites'])} site(s))")
 
 
 if __name__ == "__main__":

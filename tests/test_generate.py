@@ -133,6 +133,78 @@ def test_heatmap_grid_marks_future_cells():
     assert all(c["date"] > end for c in future)
 
 
+def test_frame_bytes_sums_file_sizes(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-15-00-000000-0800", data=b"de"),
+    ]
+
+    assert generate.frame_bytes(frames) == 5
+
+
+def test_disk_usage_missing_dir_is_none(tmp_path):
+    assert generate.disk_usage(tmp_path / "nope") is None
+
+
+def test_disk_usage_returns_total_used_free(tmp_path):
+    usage = generate.disk_usage(tmp_path)
+
+    assert usage.keys() == {"total", "used", "free"}
+    assert usage["total"] > 0
+
+
+def test_human_bytes_formats_by_magnitude():
+    assert generate._human_bytes(0) == "0 B"
+    assert generate._human_bytes(2048) == "2.0 KB"
+    assert generate._human_bytes(3 * 1024**3) == "3.0 GB"
+
+
+def test_ensure_archive_link_creates_symlink(tmp_path):
+    archive_dir = tmp_path / "archive"
+    www_dir = tmp_path / "www"
+    archive_dir.mkdir()
+    www_dir.mkdir()
+
+    generate.ensure_archive_link(www_dir, archive_dir)
+
+    link = www_dir / "archive"
+    assert link.is_symlink()
+    assert link.resolve() == archive_dir.resolve()
+
+
+def test_ensure_archive_link_is_idempotent(tmp_path):
+    archive_dir = tmp_path / "archive"
+    www_dir = tmp_path / "www"
+    archive_dir.mkdir()
+    www_dir.mkdir()
+
+    generate.ensure_archive_link(www_dir, archive_dir)
+    generate.ensure_archive_link(www_dir, archive_dir)  # should not raise
+
+    assert (www_dir / "archive").resolve() == archive_dir.resolve()
+
+
+def test_ensure_archive_link_skips_missing_archive(tmp_path):
+    www_dir = tmp_path / "www"
+    www_dir.mkdir()
+
+    generate.ensure_archive_link(www_dir, tmp_path / "nope")
+
+    assert not (www_dir / "archive").exists()
+
+
+def test_ensure_archive_link_does_not_clobber_existing_path(tmp_path):
+    archive_dir = tmp_path / "archive"
+    www_dir = tmp_path / "www"
+    archive_dir.mkdir()
+    www_dir.mkdir()
+    (www_dir / "archive").mkdir()  # a real directory, not a symlink
+
+    generate.ensure_archive_link(www_dir, archive_dir)
+
+    assert not (www_dir / "archive").is_symlink()
+
+
 def test_build_page_data_looks_up_cam_url(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
@@ -145,7 +217,7 @@ def test_build_page_data_looks_up_cam_url(tmp_path):
         cam_config={"summit": {"url": "https://example.com/summit.jpg"}},
     )
 
-    assert data[0]["cams"][0]["url"] == "https://example.com/summit.jpg"
+    assert data["sites"][0]["cams"][0]["url"] == "https://example.com/summit.jpg"
 
 
 def test_build_page_data_url_missing_for_unconfigured_cam(tmp_path):
@@ -154,7 +226,7 @@ def test_build_page_data_url_missing_for_unconfigured_cam(tmp_path):
 
     data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
 
-    assert data[0]["cams"][0]["url"] is None
+    assert data["sites"][0]["cams"][0]["url"] is None
 
 
 def test_render_html_links_cam_name_to_its_url(tmp_path):
@@ -187,6 +259,18 @@ def test_render_html_is_self_contained_and_shows_cams(tmp_path):
     assert "<script" not in doc
 
 
+def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
+    doc = generate.render_html(data, now, timedelta(hours=1))
+
+    assert '<a href="archive/">browse the full archive</a>' in doc
+    assert "free of" in doc
+    assert "<th>Disk</th>" in doc
+
+
 def test_build_page_data_pairs_health_with_log(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     log = tmp_path / "capture.log"
@@ -195,6 +279,6 @@ def test_build_page_data_pairs_health_with_log(tmp_path):
 
     data = generate.build_page_data(tmp_path, log, now, timedelta(hours=1))
 
-    summit = data[0]["cams"][0]
+    summit = data["sites"][0]["cams"][0]
     assert summit["name"] == "summit"
     assert summit["health"]["outcome"]["outcome"] == "saved"

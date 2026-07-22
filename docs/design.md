@@ -193,9 +193,17 @@ downloaded per day.
 - **Activity heatmap:** derived directly from archive filenames — no new data source needed.
   One contribution-style grid per cam, grouped under its site.
 - **Health/status view:** last frame per cam, how long ago, a staleness flag (`--stale-hours`,
-  default 1), and the last-run outcome. The outcome needs the persisted `capture.log` from
-  Component 1 — status can't be derived from successful frames alone, since a stuck/failing
-  cam produces *no* new archive entries.
+  default 1), the last-run outcome, and per-cam + total disk usage (`shutil.disk_usage` on
+  `archive_dir`). The outcome needs the persisted `capture.log` from Component 1 — status
+  can't be derived from successful frames alone, since a stuck/failing cam produces *no*
+  new archive entries.
+- **Browsing the archive:** each cam name links to its live image, and the generator
+  symlinks `www/archive` to `archive_dir` on every run so the full frame archive is
+  reachable as a plain directory listing at `/archive/` — no copying, and no new serving
+  code (`http.server` follows the symlink). Same home-network/no-auth trust model as the
+  rest of the page; see `docs/open-questions.md` #8. A proper gallery view (paginated by
+  day/cam with thumbnails, generated the same way as the heatmap) is a natural next step on
+  top of this rather than a new access decision.
 - **Remote access:** not built now; Tailscale is the documented future option, and would also
   cover remote SSH to the Pi for maintenance, not just this page.
 
