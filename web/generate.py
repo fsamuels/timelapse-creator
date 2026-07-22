@@ -10,6 +10,9 @@ log, then writes a single self-contained HTML page with two views:
   * Activity heatmap — a GitHub-style contribution grid of frames captured per
     day, per cam.
 
+Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
+so it's directly browsable, and reports per-cam and total disk usage.
+
 Designed to run on the Pi after each capture (see deploy/pi/), regenerating the
 page — no persistent app server. It reads ``archive_dir`` from the config, so it
 naturally shows exactly the frames in that directory (on the Pi: Pi-captured
@@ -19,6 +22,7 @@ frames) with no source-era filtering logic of its own.
 import argparse
 import html
 import json
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -50,6 +54,43 @@ def scan_archive(archive_dir):
         if cams:
             sites[site_dir.name] = cams
     return sites
+
+
+def frame_bytes(frames):
+    """Total size in bytes of a list of frame files."""
+    return sum(f.stat().st_size for f in frames)
+
+
+def disk_usage(archive_dir):
+    """Return ``{"total", "used", "free"}`` bytes for archive_dir's filesystem.
+
+    None if archive_dir doesn't exist yet (nothing captured, or a fresh checkout).
+    """
+    archive_dir = Path(archive_dir)
+    if not archive_dir.is_dir():
+        return None
+    usage = shutil.disk_usage(archive_dir)
+    return {"total": usage.total, "used": usage.used, "free": usage.free}
+
+
+def ensure_archive_link(www_dir, archive_dir):
+    """Symlink ``www_dir/archive`` to archive_dir.
+
+    Lets http.server serve the raw frames (browsable directory listing, no
+    copying) alongside the generated status page. A no-op if the link already
+    points at archive_dir, and leaves anything else already at that path alone.
+    """
+    archive_dir = Path(archive_dir).resolve()
+    if not archive_dir.is_dir():
+        return  # nothing captured yet
+    link = Path(www_dir) / "archive"
+    if link.is_symlink():
+        if link.resolve() == archive_dir:
+            return
+        link.unlink()
+    elif link.exists():
+        return
+    link.symlink_to(archive_dir, target_is_directory=True)
 
 
 def read_capture_log(log_path):
@@ -140,6 +181,15 @@ def _level(count, peak):
     return min(4, 1 + int(3 * (count - 1) / peak))
 
 
+def _human_bytes(n):
+    """Render a byte count like '482 KB' or '1.3 GB'."""
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
 def _human_ago(delta):
     seconds = int(delta.total_seconds())
     if seconds < 90:
@@ -153,28 +203,43 @@ def _human_ago(delta):
     return f"{hours // 24} days ago"
 
 
-def build_page_data(archive_dir, log_path, now, stale_after):
-    """Gather everything the template needs from the archive and the log."""
+def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
+    """Gather everything the template needs from the archive and the log.
+
+    ``cam_config`` is the capture config's ``cams`` mapping (cam name -> dict
+    with a ``url`` key), used to link each cam's name to its live image.
+
+    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None}``.
+    """
     sites = scan_archive(archive_dir)
     outcomes = latest_outcomes(read_capture_log(log_path))
+    cam_config = cam_config or {}
     today = now.date()
 
-    data = []
+    site_views = []
     for site, cams in sites.items():
         cam_views = []
         for cam, frames in cams.items():
             cam_views.append(
                 {
                     "name": cam,
+                    "url": cam_config.get(cam, {}).get("url"),
                     "health": cam_health(frames, outcomes.get(cam), now, stale_after),
                     "grid": heatmap_grid(daily_counts(frames), today),
+                    "bytes": frame_bytes(frames),
                 }
             )
-        data.append({"site": site, "cams": cam_views})
-    return data
+        site_views.append({"site": site, "cams": cam_views})
+    return {"sites": site_views, "disk": disk_usage(archive_dir)}
 
 
 # --- rendering -------------------------------------------------------------
+
+_LIGHT_VARS = """
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
+    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
+    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
+"""
 
 _STYLE = f"""
 :root {{
@@ -182,20 +247,25 @@ _STYLE = f"""
   --border: #30363d; --ok: #3fb950; --stale: #d29922;
   --l0:#161b22; --l1:#0b2c5c; --l2:#15468a; --l3:#2b6cb8; --l4:#4c9aff;
 }}
+:root[data-theme="light"] {{
+{_LIGHT_VARS}}}
 @media (prefers-color-scheme: light) {{
-  :root {{
-    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
-    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
-    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
-  }}
+  :root[data-theme="system"] {{
+{_LIGHT_VARS}  }}
 }}
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
 main {{ max-width: 900px; margin: 0 auto; }}
+.top-row {{ display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; }}
 h1 {{ font-size: 1.5rem; margin: 0 0 .25rem; }}
 h2 {{ font-size: 1.05rem; margin: 2rem 0 .75rem; }}
 .sub {{ color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }}
+.theme-select {{ color: var(--muted); font-size: .85rem; }}
+.theme-select select {{ font: inherit; color: var(--fg); background: var(--card);
+  border: 1px solid var(--border); border-radius: .35rem; padding: .15rem .4rem;
+  margin-left: .35rem; }}
 table {{ border-collapse: collapse; width: 100%; }}
 th, td {{ text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }}
 th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase;
@@ -229,7 +299,14 @@ footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
 """
 
 
-def _status_row(cam_name, health, now):
+def _status_row(cam_name, url, health, cam_bytes, now):
+    if url:
+        name_cell = (
+            f'<a href="{html.escape(url)}" target="_blank" rel="noopener">'
+            f"{html.escape(cam_name)}</a>"
+        )
+    else:
+        name_cell = html.escape(cam_name)
     last = health["last_time"]
     if last is None:
         last_cell = '<span class="muted">no frames yet</span>'
@@ -252,8 +329,9 @@ def _status_row(cam_name, health, now):
     else:
         run_cell = '<span class="muted">—</span>'
     return (
-        f"<tr><td>{html.escape(cam_name)}</td><td>{badge}</td>"
-        f"<td>{last_cell}</td><td>{health['frame_count']}</td><td>{run_cell}</td></tr>"
+        f"<tr><td>{name_cell}</td><td>{badge}</td>"
+        f"<td>{last_cell}</td><td>{health['frame_count']}</td>"
+        f"<td>{html.escape(_human_bytes(cam_bytes))}</td><td>{run_cell}</td></tr>"
     )
 
 
@@ -301,29 +379,44 @@ def _heatmap_html(grid):
 
 
 def render_html(page_data, now, stale_after):
+    sites = page_data["sites"]
+    disk = page_data["disk"]
     parts = [
         "<!doctype html>",
-        '<html lang="en"><head><meta charset="utf-8">',
+        '<html lang="en" data-theme="dark"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<meta http-equiv="refresh" content="900">',  # reload every 15 min
         "<title>timelapse-creator status</title>",
         f"<style>{_STYLE}</style></head><body><main>",
-        "<h1>timelapse-creator status</h1>",
+        '<div class="top-row"><h1>timelapse-creator status</h1>'
+        '<label class="theme-select">Theme '
+        "<select onchange=\"document.documentElement.setAttribute('data-theme', this.value)\">"
+        '<option value="dark" selected>Dark</option>'
+        '<option value="light">Light</option>'
+        '<option value="system">System</option>'
+        "</select></label></div>",
         f'<p class="sub">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M %Z"))} · '
-        f'"stale" = no new frame in over {_format_hours(stale_after)}</p>',
+        f'"stale" = no new frame in over {_format_hours(stale_after)} · '
+        '<a href="archive/">browse the full archive</a></p>',
     ]
+    if disk:
+        parts.append(
+            f'<p class="sub">Disk: {html.escape(_human_bytes(disk["free"]))} free of '
+            f'{html.escape(_human_bytes(disk["total"]))} '
+            f'({html.escape(_human_bytes(disk["used"]))} used)</p>'
+        )
 
-    if not page_data:
+    if not sites:
         parts.append('<p class="muted">No frames archived yet.</p>')
 
-    for site in page_data:
+    for site in sites:
         parts.append(f"<h2>{html.escape(site['site'])}</h2>")
         parts.append(
             "<table><thead><tr><th>Cam</th><th>Status</th><th>Last frame</th>"
-            "<th>Frames</th><th>Last run</th></tr></thead><tbody>"
+            "<th>Frames</th><th>Disk</th><th>Last run</th></tr></thead><tbody>"
         )
         for cam in site["cams"]:
-            parts.append(_status_row(cam["name"], cam["health"], now))
+            parts.append(_status_row(cam["name"], cam.get("url"), cam["health"], cam["bytes"], now))
         parts.append("</tbody></table>")
         for cam in site["cams"]:
             parts.append('<div class="cam-block">')
@@ -386,12 +479,15 @@ def main():
 
     now = datetime.now(PACIFIC)
     stale_after = timedelta(hours=args.stale_hours)
-    page_data = build_page_data(archive_dir, log_path, now, stale_after)
+    page_data = build_page_data(
+        archive_dir, log_path, now, stale_after, cam_config=config.get("cams")
+    )
     html_doc = render_html(page_data, now, stale_after)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html_doc)
-    print(f"wrote {output} ({len(page_data)} site(s))")
+    ensure_archive_link(output.parent, archive_dir)
+    print(f"wrote {output} ({len(page_data['sites'])} site(s))")
 
 
 if __name__ == "__main__":

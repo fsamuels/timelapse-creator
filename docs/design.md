@@ -180,12 +180,17 @@ the capture pipeline is still working, and show a GitHub-style activity graph of
 downloaded per day.
 
 - **Runs on the Pi**, home network only. `web/generate.py` regenerates a single
-  self-contained static HTML page (inline CSS, no external assets, light/dark aware) —
-  served by `python -m http.server` under `deploy/pi/timelapse-web.service`, no persistent
-  app server. It reuses `capture/archive.py`'s `parse_frame_time` (the inverse of
+  self-contained static HTML page (inline CSS, no external assets) — served by
+  `python -m http.server` under `deploy/pi/timelapse-web.service`, no persistent app
+  server. It reuses `capture/archive.py`'s `parse_frame_time` (the inverse of
   `save_frame`'s naming) for the timestamps. This matches the data's own cadence (it only
   changes every 15 minutes) and the project's batch-job shape rather than adding an
   always-on service to a single-core, 512MB Pi Zero W.
+- **Theme:** a Dark/Light/System dropdown, defaulting to dark on every load (an inline
+  `onchange` attribute flips a `data-theme` attribute on `<html>`, no `<script>` tag,
+  matching the "no external assets" self-contained requirement enforced by
+  `tests/test_generate.py`). System still tracks `prefers-color-scheme` if picked. No
+  persistence — deliberately, since the page already reloads from scratch every 15 minutes.
 - **Regeneration:** the capture service runs it as an `ExecStartPost` after each capture,
   so the page refreshes every run. Because the generator reads `archive_dir` from the
   config, it shows exactly the frames in that directory — on the Pi, only Pi-captured
@@ -193,9 +198,17 @@ downloaded per day.
 - **Activity heatmap:** derived directly from archive filenames — no new data source needed.
   One contribution-style grid per cam, grouped under its site.
 - **Health/status view:** last frame per cam, how long ago, a staleness flag (`--stale-hours`,
-  default 1), and the last-run outcome. The outcome needs the persisted `capture.log` from
-  Component 1 — status can't be derived from successful frames alone, since a stuck/failing
-  cam produces *no* new archive entries.
+  default 1), the last-run outcome, and per-cam + total disk usage (`shutil.disk_usage` on
+  `archive_dir`). The outcome needs the persisted `capture.log` from Component 1 — status
+  can't be derived from successful frames alone, since a stuck/failing cam produces *no*
+  new archive entries.
+- **Browsing the archive:** each cam name links to its live image, and the generator
+  symlinks `www/archive` to `archive_dir` on every run so the full frame archive is
+  reachable as a plain directory listing at `/archive/` — no copying, and no new serving
+  code (`http.server` follows the symlink). Same home-network/no-auth trust model as the
+  rest of the page; see `docs/open-questions.md` #8. A proper gallery view (paginated by
+  day/cam with thumbnails, generated the same way as the heatmap) is a natural next step on
+  top of this rather than a new access decision.
 - **Remote access:** not built now; Tailscale is the documented future option, and would also
   cover remote SSH to the Pi for maintenance, not just this page.
 

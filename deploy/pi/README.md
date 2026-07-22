@@ -68,11 +68,14 @@ nothing here disables the Actions schedule. The steps below document a from-scra
 ## Status page
 
 `capture/main.py` writes frames and the capture log; `web/generate.py` turns those into
-a single static `index.html` (health/status table per cam + a GitHub-style activity
-heatmap). The capture service regenerates it after every run via `ExecStartPost`, and
-`timelapse-web.service` serves it with `python -m http.server` — no persistent app
-server. Once the timer has run at least once, browse to `http://<pi-hostname>:8080/` from
-the home network — on the current deployment that's `http://timelapse-pi.local:8080/`.
+a single static `index.html` (health/status table per cam, including per-cam and total
+disk usage, + a GitHub-style activity heatmap). It also symlinks `www/archive` to the
+configured `archive_dir`, so the raw frame archive is browsable (plain directory listing)
+alongside the generated page. The capture service regenerates the page after every run
+via `ExecStartPost`, and `timelapse-web.service` serves it with `python -m http.server` —
+no persistent app server. Once the timer has run at least once, browse to
+`http://<pi-hostname>:8080/` from the home network — on the current deployment that's
+`http://timelapse-pi.local:8080/`.
 
 To generate the page by hand (e.g. to check it before enabling the timer):
 
@@ -80,9 +83,10 @@ To generate the page by hand (e.g. to check it before enabling the timer):
 /opt/timelapse-creator/.venv/bin/python -m web.generate --config capture/config.pi.yaml
 ```
 
-**No auth:** the page trusts the home network and is served on all interfaces. Don't
-port-forward it or otherwise expose port 8080 publicly (see `docs/open-questions.md` #8);
-Tailscale is the documented path for remote access.
+**No auth:** the page — and, via the `archive/` symlink, the entire raw frame archive —
+trusts the home network and is served on all interfaces. Don't port-forward it or
+otherwise expose port 8080 publicly (see `docs/open-questions.md` #8); Tailscale is the
+documented path for remote access.
 
 ## Status
 
