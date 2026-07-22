@@ -3,11 +3,13 @@
 Tools for building timelapse videos from the [Ski Bluewood webcams](https://bluewood.com/webcams/)
 (Dayton, WA) — and eventually any public webcam.
 
-**Status: capture pipeline is live.** A GitHub Actions cron job has been fetching frames
-from both cams every 15 minutes since 2026-07-16 and committing them straight to
-`archive/` on `main`. The video builder (turning the archive into an mp4) is not built yet.
-A Raspberry Pi Zero W is in transit (ordered 2026-07-16, ETA ~12-18 days) to eventually take
-over capture from GitHub Actions — see `docs/open-questions.md` for the plan.
+**Status: capture pipeline is live on two platforms.** A GitHub Actions cron job has been
+fetching the two Bluewood cams every 15 minutes since 2026-07-16 and committing them to
+`archive/` on `main`. A Raspberry Pi Zero W (hostname `timelapse-pi`) is now deployed and
+capturing all four cams (the two Bluewood cams plus two Seattle dev cams) on a systemd
+timer, with a home-network status page live at `http://timelapse-pi.local:8080/`. The two
+capture paths run in parallel during the hand-off trial (see `docs/open-questions.md` #1).
+The video builder (turning the archive into an mp4) is not built yet.
 
 ## The idea
 
@@ -47,14 +49,15 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - `web/generate.py` — regenerates a single static status page (health/status table per cam +
   a GitHub-style activity heatmap) from the archive filenames and the capture log
 - `.github/workflows/capture.yml` — runs `capture/main.py` with no args every 15 minutes, commits new Bluewood frames to `archive/`
-- `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up doc for running capture and the status page on the Pi
+- `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up
+  doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all four cams and
+  serving the status page
 
 ## Not implemented yet
 
 - The video builder (archive → mp4)
-- Actually running any of this on the Pi hardware — the systemd units exist as code
-  (`deploy/pi/`) but the Pi itself hasn't arrived, so nothing has had an on-device smoke test
-- Long-term storage (frames are living in git as a deliberate short-term stopgap)
+- Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
+  in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
 
 ## Quick summary of decisions so far
 
@@ -64,16 +67,16 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit and will take
-  over via a systemd timer, with GitHub Actions running in parallel for a short trial before
-  being disabled (see `docs/open-questions.md` #1).
+- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) now captures all four cams via
+  a systemd timer; GitHub Actions still captures Bluewood in parallel during the hand-off
+  trial, to be disabled once the Pi proves reliable (see `docs/open-questions.md` #1).
 - **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —
   AWS S3 vs. Backblaze B2 vs. Google Drive, see `docs/open-questions.md` #5).
-- **Web interface:** a status/activity dashboard is **built** (`web/generate.py`) —
-  home-network-only, a statically-regenerated Python page (no app server) reusing the
+- **Web interface:** a status/activity dashboard is **built and deployed** (`web/generate.py`)
+  — home-network-only, a statically-regenerated Python page (no app server) reusing the
   archive's own filenames for the activity graph, plus the persisted capture log for health
-  status. Regenerated after each capture run and served under systemd on the Pi; the systemd
-  wiring is untested until the Pi arrives (see `docs/open-questions.md` #8).
+  status. Regenerated after each capture run and served under systemd on the Pi, live at
+  `http://timelapse-pi.local:8080/` (see `docs/open-questions.md` #8).
 
 Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): what the video
 builder's output looks like (season video / daily clips / on-demand CLI), how outages should

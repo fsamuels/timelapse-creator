@@ -3,18 +3,20 @@
 Decisions that shape the implementation, with the options discussed and current
 recommendations. None of these are locked in yet.
 
-## 1. Where does the capture job run? (decided, for now)
+## 1. Where does the capture job run? (decided)
 
-**Decided:** GitHub Actions cron, running today. A Raspberry Pi Zero W was also ordered
-2026-07-16 (free shipping, ETA ~12-18 days) and will likely take over capture once it
-arrives — the hand-off plan itself is decided too, see the new section below.
+**Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now deployed and captures all four
+cams every 15 minutes via a systemd timer. GitHub Actions cron still runs in parallel,
+capturing Bluewood, during the hand-off trial (see below). The Pi was ordered 2026-07-16.
 
-### The Pi hand-off plan (decided; trial started)
+### The Pi hand-off plan (decided; trial in progress)
 
-**Trial status:** the two Bluewood cams (`summit`, `base`) have been added to
-`capture/config.pi.yaml`, so the Pi now captures all four cams — this starts the
-parallel-capture trial below. GitHub Actions continues capturing Bluewood via
-`capture/config.yaml` during the comparison window.
+**Trial status:** the Pi (`timelapse-pi`) is deployed and live — running the systemd capture
+timer against `capture/config.pi.yaml` (all four cams) and serving the status page at
+`http://timelapse-pi.local:8080/`. GitHub Actions continues capturing Bluewood via
+`capture/config.yaml` in parallel during the comparison window. Still to do before the trial
+ends: migrate the git-committed Bluewood frames onto the Pi, disable the Actions schedule,
+and stop tracking `archive/` in git.
 
 - **Scheduling:** a systemd timer on the Pi, not cron — better logging (`journalctl`) and
   restart semantics, and it's a natural place to also manage the bucket-sync job and the web
@@ -55,7 +57,7 @@ Original option comparison, for reference:
 
 | Option | Pros | Cons |
 | --- | --- | --- |
-| **Home server / Raspberry Pi** ✅ chosen (arriving) | Free to run, local storage, any interval, full control | Requires an always-on box at home |
+| **Home server / Raspberry Pi** ✅ chosen (live) | Free to run, local storage, any interval, full control | Requires an always-on box at home |
 | **GitHub Actions scheduled workflow** ✅ chosen (running now) | Free, zero hardware to own | Practical floor of ~10–15 min with scheduling jitter; runs occasionally skipped under load; frames must be pushed somewhere (repo or external storage) |
 | **Cloud scheduler + function** (Cloud Run job / Lambda + EventBridge, writing to a bucket) | Most reliable timing, runs forever unattended, pennies per month | Most setup: cloud account, IAM, deployment |
 | **Everyday computer (cron/launchd)** | Simplest possible | Only captures while the machine is awake — adds our downtime on top of Bluewood's |
@@ -170,12 +172,11 @@ GitHub ruleset requiring PRs on `main` for everyone, no bypass needed anymore.
 Two goals: confirm the capture pipeline is still working, and show a GitHub-style activity
 graph of images downloaded per day.
 
-**Implemented** as `web/generate.py`, matching the decided stack below: it reuses
+**Implemented and deployed** as `web/generate.py`, matching the decided stack below: it reuses
 `capture/archive.py`'s `parse_frame_time` and regenerates one self-contained static HTML
 page (inline CSS, light/dark aware), run as an `ExecStartPost` on the capture service and
 served by `deploy/pi/timelapse-web.service` (`python -m http.server`). See `docs/design.md`
-Component 3. Only the on-Pi systemd wiring is still untested (no hardware yet); the
-generator itself has been run and eyeballed locally against real and sample frames.
+Component 3. It's live on the Pi at `http://timelapse-pi.local:8080/` (home network only).
 
 **Stack — decided:** a small Python script (reusing `capture/archive.py`'s filename/timestamp
 helpers directly) regenerates a static HTML page after each capture run, served by nginx or
@@ -228,23 +229,23 @@ only written every 15 minutes per cam.
 - [x] Add the persisted capture log (question 9) — `capture/capture_log.py`, wired into
       `capture/main.py` via `capture/config.pi.yaml`'s `capture_log` key
 - [x] Pi systemd scaffolding written as code — `deploy/pi/timelapse-capture.service`,
-      `deploy/pi/timelapse-capture.timer`, and a bring-up doc (`deploy/pi/README.md`). Not
-      yet run anywhere: the Pi hardware hasn't arrived, so this is untested on-device.
-- [ ] Pi Zero W arrives → bring up per "The Pi hand-off plan" (question 1) using the
-      `deploy/pi/` units, smoke-test `capture/main.py --config capture/config.pi.yaml`
-      on-device (watch for missing armv6 wheels — `requests` and `PyYAML` are both small
-      enough to build from source if needed)
-- [ ] Point the Pi config's `archive_dir` at real local disk and confirm it works end-to-end
-      on hardware; migrate existing git-committed Bluewood frames onto it once the Pi also
-      captures Bluewood (question 1, question 5)
+      `deploy/pi/timelapse-capture.timer`, `deploy/pi/timelapse-web.service`, and a bring-up
+      doc (`deploy/pi/README.md`)
+- [x] Pi Zero W deployed (`timelapse-pi`) and brought up per "The Pi hand-off plan"
+      (question 1) using the `deploy/pi/` units; capture runs on the systemd timer against
+      `capture/config.pi.yaml` (all four cams)
+- [x] Confirm the Pi writes to real local disk (`/var/lib/timelapse/archive`) end-to-end on
+      hardware, in the `<site>/<cam>/` layout
+- [ ] Migrate the existing git-committed Bluewood frames onto the Pi's storage so the archive
+      has one home (question 1, question 5)
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the
       existing AWS account before deciding; wire up `rclone` sync either way
 - [ ] Keep GitHub Actions running in parallel for the trial period (question 1), then disable
       the schedule and stop tracking `archive/` in git
-- [x] Build the static-HTML web interface (question 8) — `web/generate.py` (health/status
-      + per-cam activity heatmap), regenerated via the capture service's `ExecStartPost`
-      and served by `deploy/pi/timelapse-web.service`. Verified locally; systemd wiring
-      untested until the Pi arrives.
+- [x] Build and deploy the static-HTML web interface (question 8) — `web/generate.py`
+      (health/status + per-cam activity heatmap), regenerated via the capture service's
+      `ExecStartPost` and served by `deploy/pi/timelapse-web.service`; live on the Pi at
+      `http://timelapse-pi.local:8080/`
 - [ ] Build the video builder (`docs/design.md` Component 2) — currently just a design, no code
 - [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed
       before the video builder can be built, not just designed

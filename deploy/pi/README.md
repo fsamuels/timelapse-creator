@@ -1,11 +1,11 @@
 # Pi bring-up
 
-Runs the capture job on a Raspberry Pi via systemd instead of GitHub Actions. **This
-currently captures the Seattle (KING 5) cams only** (`capture/config.pi.yaml`) — the
-off-grid Bluewood cams stay on GitHub Actions (`.github/workflows/capture.yml`) for
-now and move over once the Pi trial begins (see `docs/open-questions.md` #1). The two
-capture paths run independently and in parallel; nothing here disables the Actions
-schedule.
+Runs the capture job on a Raspberry Pi via systemd instead of GitHub Actions. **This is
+deployed and running** on the Pi (hostname `timelapse-pi`), capturing **all four cams** (the
+two Bluewood cams plus the two Seattle KING 5 dev cams) from `capture/config.pi.yaml`. GitHub
+Actions (`.github/workflows/capture.yml`) still captures Bluewood in parallel during the
+hand-off trial (see `docs/open-questions.md` #1); the two capture paths run independently and
+nothing here disables the Actions schedule. The steps below document a from-scratch bring-up.
 
 ## Steps
 
@@ -72,7 +72,7 @@ a single static `index.html` (health/status table per cam + a GitHub-style activ
 heatmap). The capture service regenerates it after every run via `ExecStartPost`, and
 `timelapse-web.service` serves it with `python -m http.server` — no persistent app
 server. Once the timer has run at least once, browse to `http://<pi-hostname>:8080/` from
-the home network.
+the home network — on the current deployment that's `http://timelapse-pi.local:8080/`.
 
 To generate the page by hand (e.g. to check it before enabling the timer):
 
@@ -86,9 +86,7 @@ Tailscale is the documented path for remote access.
 
 ## Status
 
-These unit files are code, not yet a confirmed working deployment — the Pi hardware
-hasn't arrived and none of this has had an on-device smoke test yet. Treat paths and
-timing as a starting point to verify once the Pi is in hand (see
-`docs/open-questions.md` #10). The status-page generator (`web/generate.py`) *has* been
-run and eyeballed locally against sample and real archive frames; only the systemd
-wiring here is untested on-device.
+Deployed and confirmed working on the Pi (`timelapse-pi`): the capture timer runs every
+15 minutes against `capture/config.pi.yaml` (all four cams), and the status page is live at
+`http://timelapse-pi.local:8080/`. The paths in the unit files match that deployment
+(`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust them if yours differ.
