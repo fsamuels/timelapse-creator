@@ -22,9 +22,10 @@
   time-sensitive timelapse subject alongside the season-long snow one.
 - **Cams are now generalized beyond Bluewood.** `capture/main.py` takes a `--config` flag
   (default: `capture/config.yaml`, unchanged), and a second config,
-  `capture/config.pi.yaml`, adds two Seattle (KING 5) cams — added to keep developing the
-  pipeline while Bluewood is dark. GitHub Actions keeps capturing Bluewood via the original
-  config; the Pi config is for the Pi only, per the hand-off plan
+  `capture/config.pi.yaml`, which the Pi runs. It started with two Seattle (KING 5) cams —
+  added to keep developing the pipeline while Bluewood was dark — and now also includes the
+  two Bluewood cams (`summit`, `base`), so the Pi captures all four. GitHub Actions keeps
+  capturing Bluewood in parallel via `config.yaml` during the hand-off trial
   (`docs/open-questions.md` #1).
 
 ## Architecture: two decoupled pieces
