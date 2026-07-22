@@ -196,7 +196,13 @@ downloaded per day.
   config, it shows exactly the frames in that directory — on the Pi, only Pi-captured
   frames (the "Pi-era only" activity scope), with no source-era filtering logic of its own.
 - **Activity heatmap:** derived directly from archive filenames — no new data source needed.
-  One contribution-style grid per cam, grouped under its site.
+  One contribution-style grid per cam, grouped under its site. Each cell's tooltip reads
+  "N images on YYYY-MM-DD" (count leads, date follows).
+- **Thumbnail:** the per-cam block shows the newest frame to the right of its heatmap — an
+  `<img>` reading straight from the `archive/` symlink, no copy step. Chosen over the status
+  table (already the densest part of the page); placing it beside the heatmap grid is safe
+  because that grid is fixed at 13 weeks regardless of archive size, so it never actually
+  grows.
 - **Health/status view:** last frame per cam, how long ago, a staleness flag (`--stale-hours`,
   default 1), the last-run outcome, and per-cam + total disk usage (`shutil.disk_usage` on
   `archive_dir`). The outcome needs the persisted `capture.log` from Component 1 — status

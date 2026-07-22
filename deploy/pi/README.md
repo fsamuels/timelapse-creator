@@ -10,10 +10,12 @@ nothing here disables the Actions schedule. The steps below document a from-scra
 ## Steps
 
 1. Clone the repo to `/opt/timelapse-creator` (adjust if you use a different path — see
-   the placeholder-paths note below):
+   the placeholder-paths note below), then hand ownership to your user so later updates
+   (`deploy/pi/update.sh`) don't need `sudo` for `git pull`:
 
    ```
    sudo git clone https://github.com/<owner>/timelapse-creator.git /opt/timelapse-creator
+   sudo chown -R $USER:$USER /opt/timelapse-creator
    ```
 
 2. Create a virtualenv and install dependencies:
@@ -64,6 +66,29 @@ nothing here disables the Actions schedule. The steps below document a from-scra
    ```
    journalctl -u timelapse-capture.service -f
    ```
+
+## Updating the deployment
+
+Once a PR merges to `main`, redeploy the code change on the Pi with:
+
+```
+deploy/pi/update.sh
+```
+
+It pulls `main` (fast-forward only — refuses if you're on another branch or the local repo
+has diverged), reinstalls dependencies from `requirements.txt`, and regenerates the status
+page immediately rather than waiting for the next capture tick. Nothing needs restarting for
+a plain code change: `timelapse-capture.service` re-reads the repo from disk on every timer
+tick, and `timelapse-web.service` just serves whatever static files are already there.
+
+**Exception:** if the PR also changed `deploy/pi/*.service` or `*.timer`, `update.sh` won't
+pick that up — copy the unit files into place and restart the affected units yourself:
+
+```
+sudo cp deploy/pi/*.service deploy/pi/*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart timelapse-capture.timer timelapse-web.service
+```
 
 ## Status page
 

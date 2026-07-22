@@ -213,6 +213,13 @@ only, no auth" trust model as the rest of the page (see Access below), and it's 
 groundwork for a proper gallery view later (paginated by day/cam instead of a raw file
 tree) without having to revisit what's exposed.
 
+**Thumbnail (implemented):** each cam's per-cam block shows its newest frame to the right of
+its heatmap — an `<img>` pointed straight at the file under the `archive/` symlink above, so
+there's no separate copy step to keep in sync. Placed in the per-cam block rather than the
+status table (already the busiest part of the page), and beside the heatmap grid is safe
+because that grid stays a fixed 13-week width regardless of archive size — it wasn't
+actually the growth risk it first looked like. Wraps below the heatmap on narrow viewports.
+
 **Access — decided:** home network only for now, and that now covers the raw archive too
 (the `/archive/` symlink above), not just the generated page — the archive was fine to
 expose since the trust boundary (home network, no auth) doesn't change. Tailscale (private
@@ -259,6 +266,12 @@ only written every 15 minutes per cam.
       (health/status + per-cam activity heatmap), regenerated via the capture service's
       `ExecStartPost` and served by `deploy/pi/timelapse-web.service`; live on the Pi at
       `http://timelapse-pi.local:8080/`
+- [x] Script the Pi redeploy step — `deploy/pi/update.sh` wraps `git pull --ff-only`,
+      dependency reinstall, and an immediate page regeneration into one command; unit-file
+      changes still need a manual `systemctl restart` (documented in `deploy/pi/README.md`).
+      A self-updating Pi (pull on its own schedule, no manual step at all) was considered and
+      set aside for now — code would go live unattended between capture ticks, a bigger trust
+      call than a one-command manual redeploy.
 - [ ] Build the video builder (`docs/design.md` Component 2) — currently just a design, no code
 - [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed
       before the video builder can be built, not just designed
