@@ -32,28 +32,31 @@ schedule.
    python3-dev libyaml-dev`).
 
 3. Create the local-disk storage directory used by `capture/config.pi.yaml`
-   (`archive_dir` and `capture_log`):
+   (`archive_dir`, `capture_log`, and the status page's `web_output`):
 
    ```
-   sudo mkdir -p /var/lib/timelapse
-   sudo chown $USER:$USER /var/lib/timelapse
+   sudo mkdir -p /var/lib/timelapse/www
+   sudo chown -R $USER:$USER /var/lib/timelapse
    ```
 
-4. Copy the two unit files into place:
+4. Copy the unit files into place:
 
    ```
-   sudo cp deploy/pi/timelapse-capture.service deploy/pi/timelapse-capture.timer /etc/systemd/system/
+   sudo cp deploy/pi/timelapse-capture.service deploy/pi/timelapse-capture.timer \
+           deploy/pi/timelapse-web.service /etc/systemd/system/
    ```
 
-5. **Adjust the placeholder paths** in both unit files if your clone or venv don't live
-   at `/opt/timelapse-creator` — `WorkingDirectory` and `ExecStart` in
-   `timelapse-capture.service` assume that path.
+5. **Adjust the placeholder paths** in the unit files if your clone or venv don't live
+   at `/opt/timelapse-creator` — `WorkingDirectory` and the `ExecStart`/`ExecStartPost`
+   lines in `timelapse-capture.service` assume that path, and `timelapse-web.service`
+   serves `/var/lib/timelapse/www` (matching `web_output` in `capture/config.pi.yaml`).
 
-6. Reload systemd and enable the timer:
+6. Reload systemd and enable the timer and the web server:
 
    ```
    sudo systemctl daemon-reload
    sudo systemctl enable --now timelapse-capture.timer
+   sudo systemctl enable --now timelapse-web.service
    ```
 
 7. Watch it run:
@@ -62,9 +65,30 @@ schedule.
    journalctl -u timelapse-capture.service -f
    ```
 
+## Status page
+
+`capture/main.py` writes frames and the capture log; `web/generate.py` turns those into
+a single static `index.html` (health/status table per cam + a GitHub-style activity
+heatmap). The capture service regenerates it after every run via `ExecStartPost`, and
+`timelapse-web.service` serves it with `python -m http.server` — no persistent app
+server. Once the timer has run at least once, browse to `http://<pi-hostname>:8080/` from
+the home network.
+
+To generate the page by hand (e.g. to check it before enabling the timer):
+
+```
+/opt/timelapse-creator/.venv/bin/python -m web.generate --config capture/config.pi.yaml
+```
+
+**No auth:** the page trusts the home network and is served on all interfaces. Don't
+port-forward it or otherwise expose port 8080 publicly (see `docs/open-questions.md` #8);
+Tailscale is the documented path for remote access.
+
 ## Status
 
 These unit files are code, not yet a confirmed working deployment — the Pi hardware
 hasn't arrived and none of this has had an on-device smoke test yet. Treat paths and
 timing as a starting point to verify once the Pi is in hand (see
-`docs/open-questions.md` #10).
+`docs/open-questions.md` #10). The status-page generator (`web/generate.py`) *has* been
+run and eyeballed locally against sample and real archive frames; only the systemd
+wiring here is untested on-device.

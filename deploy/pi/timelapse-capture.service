@@ -5,3 +5,6 @@ Description=Capture webcam frames for timelapse-creator (Pi)
 Type=oneshot
 WorkingDirectory=/opt/timelapse-creator
 ExecStart=/opt/timelapse-creator/.venv/bin/python -m capture.main --config capture/config.pi.yaml
+# Regenerate the static status page right after each capture (web_output path
+# comes from the config). Non-fatal: a failed page render must not fail capture.
+ExecStartPost=-/opt/timelapse-creator/.venv/bin/python -m web.generate --config capture/config.pi.yaml

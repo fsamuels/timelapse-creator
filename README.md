@@ -18,6 +18,9 @@ Bluewood publishes two webcams (Summit and Base). This project will:
 3. **Build** timelapse videos from the archive on demand (daily clips, a season-long video,
    or arbitrary date ranges).
 
+The archive is organized `archive/<site>/<cam>/YYYY/MM/` — cameras grouped by source
+location (`bluewood/`, `seattle/`).
+
 The defining constraint: Bluewood is **100% off-grid**. The webcams only work while the
 resort's generator is running, so outages are the norm — every night, every closed day, the
 whole off-season. The system must treat "cam is down" as ordinary operation, not an error.
@@ -40,8 +43,10 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   preserving today's behavior), fetches each cam, skips failures/stale frames, saves new ones, and
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
+- `web/generate.py` — regenerates a single static status page (health/status table per cam +
+  a GitHub-style activity heatmap) from the archive filenames and the capture log
 - `.github/workflows/capture.yml` — runs `capture/main.py` with no args every 15 minutes, commits new Bluewood frames to `archive/`
-- `deploy/pi/` — systemd service + timer units and a bring-up doc for running capture on the Pi
+- `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up doc for running capture and the status page on the Pi
 
 ## Not implemented yet
 
@@ -63,10 +68,11 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   being disabled (see `docs/open-questions.md` #1).
 - **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —
   AWS S3 vs. Backblaze B2 vs. Google Drive, see `docs/open-questions.md` #5).
-- **Web interface:** a status/activity dashboard is planned — home-network-only, a
-  statically-regenerated Python page (no app server) reusing the archive's own filenames for
-  the activity graph, plus a new persisted capture log for health status (see
-  `docs/open-questions.md` #9 and #10).
+- **Web interface:** a status/activity dashboard is **built** (`web/generate.py`) —
+  home-network-only, a statically-regenerated Python page (no app server) reusing the
+  archive's own filenames for the activity graph, plus the persisted capture log for health
+  status. Regenerated after each capture run and served under systemd on the Pi; the systemd
+  wiring is untested until the Pi arrives (see `docs/open-questions.md` #8).
 
 Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): what the video
 builder's output looks like (season video / daily clips / on-demand CLI), how outages should

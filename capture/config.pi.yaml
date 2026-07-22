@@ -8,6 +8,7 @@
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
+web_output: /var/lib/timelapse/www/index.html  # status page (web/generate.py)
 
 cams:
   columbia:
