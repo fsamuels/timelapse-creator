@@ -11,8 +11,10 @@ capture_log: /var/lib/timelapse/capture.log
 
 cams:
   columbia:
+    site: seattle  # frames land under archive/<site>/<cam>/...
     type: image
     url: "https://cdn.tegna-media.com/king/weather/columbia.jpg"
   queenanne:
+    site: seattle
     type: image
     url: "https://cdn.tegna-media.com/king/weather/queenanne.jpg"

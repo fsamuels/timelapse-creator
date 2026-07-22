@@ -76,15 +76,30 @@ Defense in layers:
 
 ```
 archive/
-  summit/
-    2026/07/  # one directory per month keeps directory sizes sane
-      2026-07-16T13-10-04-544533-0800.jpg
-      2026-07-16T13-25-01-118203-0800.jpg
-  base/
-    2026/07/
-      ...
+  bluewood/          # one directory per site (source location)
+    summit/
+      2026/07/       # one directory per month keeps directory sizes sane
+        2026-07-16T13-10-04-544533-0800.jpg
+        2026-07-16T13-25-01-118203-0800.jpg
+    base/
+      2026/07/
+        ...
+  seattle/
+    columbia/
+      2026/07/
+        ...
+    queenanne/
+      2026/07/
+        ...
 ```
 
+- The archive is grouped `archive/<site>/<cam>/YYYY/MM/`. Each cam declares its
+  `site` in the config (`config.yaml`'s cams are `bluewood`; `config.pi.yaml`'s are
+  `seattle`), and `capture/main.py` writes to `archive_root / site / name`. Grouping by
+  site keeps the two Bluewood cams together and separate from the Seattle
+  pipeline-development cams — and lets a single config eventually capture both sites at
+  once (the Pi hand-off, `docs/open-questions.md` #1) without them colliding in one flat
+  namespace.
 - Filenames are timestamps with microsecond precision (avoids collisions if two frames for
   the same cam are ever saved within the same second) at a **fixed UTC-8 offset** — not
   IANA `America/Los_Angeles` — so they read close to Pacific local time without adopting
