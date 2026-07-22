@@ -120,18 +120,19 @@ archive/
 
 ### Handing capture off to the Pi
 
-**Decided** (see `docs/open-questions.md` #1) for execution once the Raspberry Pi Zero W
-arrives: a systemd timer runs the same `capture/` code every 15 minutes on the Pi, writing to
-local disk instead of committing to git (see storage below). GitHub Actions keeps running in
-parallel for a ~1-2 week trial to confirm the Pi is reliable, then its schedule is disabled
-(manual `workflow_dispatch` stays available as an emergency fallback). Existing git-committed
-frames get migrated onto the Pi's storage so the archive has one home going forward, and
-`archive/` stops being tracked in git once the trial ends.
+**Deployed and running** (see `docs/open-questions.md` #1): a systemd timer runs the same
+`capture/` code every 15 minutes on the Pi (hostname `timelapse-pi`), writing to local disk
+at `/var/lib/timelapse/archive` instead of committing to git (see storage below), and
+capturing all four cams. GitHub Actions keeps running in parallel for a ~1-2 week trial to
+confirm the Pi is reliable, then its schedule is disabled (manual `workflow_dispatch` stays
+available as an emergency fallback). Still to do before the trial ends: migrate the existing
+git-committed frames onto the Pi's storage so the archive has one home going forward, and
+stop tracking `archive/` in git.
 
-The systemd units themselves now exist as code under `deploy/pi/`
-(`timelapse-capture.service`, `timelapse-capture.timer`) with a bring-up doc
-(`deploy/pi/README.md`), pointed at `capture/config.pi.yaml`. This is scaffolding only — the
-Pi hardware hasn't arrived yet, so none of it has been smoke-tested on-device.
+The systemd units live under `deploy/pi/` (`timelapse-capture.service`,
+`timelapse-capture.timer`, `timelapse-web.service`) with a bring-up doc
+(`deploy/pi/README.md`), pointed at `capture/config.pi.yaml`. The capture service also
+regenerates the status page after each run via an `ExecStartPost` (see Component 3).
 
 ## Component 2: the video builder
 
