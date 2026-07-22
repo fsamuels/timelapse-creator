@@ -14,6 +14,7 @@ the sequence — so a directory doesn't need to be manually sorted down to
 just the matching photos first.
 """
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,14 @@ import numpy as np
 from PIL import ExifTags, Image
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
+# normalize_sequence writes this alongside the aligned frames: a
+# filename -> ISO 8601 capture-timestamp map. cv2.imwrite (used below to
+# write warped/cropped frames) strips EXIF, so this is the only place the
+# original capture time survives normalization — the video builder reads it
+# to compute real-time gaps between frames for proportional-duration
+# timelapses.
+MANIFEST_FILENAME = "manifest.json"
 
 # Similarity transform (rotation + uniform scale + translation), not a full
 # projective homography: drone frames are slightly shifted/tilted/zoomed
@@ -177,6 +186,7 @@ def normalize_sequence(input_dir, output_dir, reference=None, min_matches=10, ou
 
     aligned = []
     skipped = []
+    timestamps = {}
     intersection_mask = None
 
     for image_path in images:
@@ -206,6 +216,7 @@ def normalize_sequence(input_dir, output_dir, reference=None, min_matches=10, ou
         )
         cv2.imwrite(str(output_dir / image_path.name), warped)
         aligned.append(image_path.name)
+        timestamps[image_path.name] = capture_time(image_path)
 
     if not aligned:
         raise ValueError("no frames could be aligned")
@@ -224,6 +235,9 @@ def normalize_sequence(input_dir, output_dir, reference=None, min_matches=10, ou
         if output_size is not None:
             cropped = cv2.resize(cropped, output_size, interpolation=cv2.INTER_AREA)
         cv2.imwrite(str(path), cropped)
+
+    manifest = {name: timestamps[name].isoformat() for name in aligned}
+    (output_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
     return {
         "aligned": aligned,

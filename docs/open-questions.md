@@ -76,24 +76,43 @@ The "storage/season" column above was estimated for the original 2 Bluewood cams
 now captures 6 cams (2 Bluewood, 2 Seattle, 2 North Carolina) at the same 15-min cadence —
 see question 11 for the revised estimate and why it's driving an SD card upgrade.
 
-## 3. What video output do we actually want?
+## 3. What video output do we actually want? (mostly decided)
 
 Not mutually exclusive — the first two are presets of the third.
 
-- **Season-long video** — snow accumulating and melting over the whole winter. The classic
-  payoff.
-- **Daily clips** — a short sunrise-to-sunset clip per day, auto-generated each night.
-- **On-demand date ranges** — `timelapse build --from ... --to ...`. Most flexible.
+- **On-demand date ranges** ✅ built — `python -m video.main <dir> --from ... --to ... -o out.mp4`.
+  Both a fixed-cadence webcam archive directory and a normalize/align.py output directory
+  work as `<dir>`; see `docs/design.md` Component 2.
+- **Daily clips** — a short sunrise-to-sunset clip per day, auto-generated each night. **Not
+  built** — a preset on top of the same `video/frames.py`/`video/encode.py` machinery.
+- **Season-long video** — snow accumulating and melting over the whole winter. **Not
+  built** — same, plus a subsampling stage (e.g. "one frame per day at noon") that doesn't
+  exist yet.
 
-**Recommendation:** build the on-demand CLI as the core, add daily/season presets on top.
+**Decided and built:** the on-demand CLI is the core; daily/season presets remain a
+follow-on, not needed until the on-demand path proves out.
 
-## 4. How should outages look in the finished video?
+A second, new capability landed alongside the on-demand CLI, not originally scoped by this
+question: **proportional (time-accurate) duration** — `--proportional --duration N` holds
+each frame for a time proportional to the real gap before the next frame (capped by
+`--min-hold`/`--max-hold`), instead of fixed fps. This is for irregularly-spaced batches —
+namely drone photos, where some weeks have several flights and others have one — so the
+video's pacing reflects actual coverage density rather than flattening every frame to equal
+screen time. See `docs/design.md` Component 2 for the algorithm and its tradeoffs (mainly:
+clamping means `--duration` is a target, not a guarantee).
 
-| Option | Watchability | Effort |
-| --- | --- | --- |
-| Skip gaps silently | Smoothest; outages invisible | Zero |
-| **Timestamp overlay + skip** ✅ recommended | Smooth, but the burned-in clock shows time jumping across outages — fits the off-grid story | Low (ffmpeg `drawtext`) |
-| "Power out" placeholder cards | Outages become explicit events in the video | Medium (synthesize card frames from the capture log) |
+## 4. How should outages look in the finished video? (decided)
+
+**Decided: skip gaps silently, no overlay.** This reverses the earlier lean toward a
+timestamp overlay below — the overlay wasn't wanted, not a case of the idea being
+technically unworkable. `video/main.py`'s default (and only, in this pass) behavior for
+gaps is exactly what plain concat already does: jump across them with no annotation.
+
+| Option | Watchability | Effort | Status |
+| --- | --- | --- | --- |
+| **Skip gaps silently** ✅ decided, built | Smoothest; outages invisible | Zero | Default and only behavior |
+| Timestamp overlay + skip | Smooth, but the burned-in clock shows time jumping across outages | Low (ffmpeg `drawtext`) | Considered, not wanted |
+| "Power out" placeholder cards | Outages become explicit events in the video | Medium (synthesize card frames from the capture log) | Not built |
 
 ## 5. Storage and final destination (mostly decided)
 
@@ -321,8 +340,12 @@ than relying on the estimate above.
       A self-updating Pi (pull on its own schedule, no manual step at all) was considered and
       set aside for now — code would go live unattended between capture ticks, a bigger trust
       call than a one-command manual redeploy.
-- [ ] Build the video builder (`docs/design.md` Component 2) — currently just a design, no code
-- [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed
-      before the video builder can be built, not just designed
+- [x] Build the video builder (`docs/design.md` Component 2) — `video/` (`frames.py`,
+      `encode.py`, `main.py`): on-demand CLI over either a webcam archive directory or a
+      normalize/align.py output directory, uniform-fps and proportional-duration timing
+      modes, optional dark-frame/dedupe filters, ffmpeg concat-demuxer H.264 encode. Daily/
+      season presets and a subsampling stage remain follow-ons.
+- [x] Decide output format (question 3) and gap-handling-in-video (question 4) — on-demand
+      CLI is the core (presets deferred); gaps are skipped silently, no timestamp overlay.
 - [ ] Once GitHub Actions is disabled and archived frames are removed from git, lock `main`
       down with a GitHub ruleset requiring PRs for everyone (see question 7 follow-up)
