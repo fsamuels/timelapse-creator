@@ -61,6 +61,15 @@ def frame_bytes(frames):
     return sum(f.stat().st_size for f in frames)
 
 
+def thumb_url(frames, archive_dir):
+    """URL for the newest frame, relative to the page (served via the
+    ``archive`` symlink created by ``ensure_archive_link``); None if empty.
+    """
+    if not frames:
+        return None
+    return f"archive/{frames[-1].relative_to(archive_dir).as_posix()}"
+
+
 def disk_usage(archive_dir):
     """Return ``{"total", "used", "free"}`` bytes for archive_dir's filesystem.
 
@@ -211,6 +220,7 @@ def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
 
     Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None}``.
     """
+    archive_dir = Path(archive_dir)
     sites = scan_archive(archive_dir)
     outcomes = latest_outcomes(read_capture_log(log_path))
     cam_config = cam_config or {}
@@ -227,6 +237,7 @@ def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
                     "health": cam_health(frames, outcomes.get(cam), now, stale_after),
                     "grid": heatmap_grid(daily_counts(frames), today),
                     "bytes": frame_bytes(frames),
+                    "thumb_url": thumb_url(frames, archive_dir),
                 }
             )
         site_views.append({"site": site, "cams": cam_views})
@@ -277,7 +288,11 @@ th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: u
   background: color-mix(in srgb, var(--stale) 18%, transparent); }}
 .muted {{ color: var(--muted); }}
 .cam-block {{ margin: 1.25rem 0; }}
-.cam-name {{ font-weight: 600; margin-bottom: .4rem; }}
+.cam-header {{ display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem;
+  flex-wrap: wrap; }}
+.cam-thumb {{ height: 108px; width: auto; max-width: 160px; object-fit: cover;
+  border-radius: .35rem; border: 1px solid var(--border); background: var(--card); }}
+.cam-name {{ font-weight: 600; }}
 .heatmap {{ overflow-x: auto; padding-bottom: .25rem; }}
 .hm-grid {{ display: inline-grid;
   grid-template-columns: 28px repeat({HEATMAP_WEEKS}, 11px);
@@ -372,9 +387,7 @@ def _heatmap_html(grid):
                 title = ""
             else:
                 n = cell["count"]
-                title = (
-                    f' title="{cell["date"].isoformat()} · ' f'{n} image{"s" if n != 1 else ""}"'
-                )
+                title = f' title="{n} image{"s" if n != 1 else ""} on {cell["date"].isoformat()}"'
                 cls = f"day l{cell['level']}"
             cells.append(f'<div class="{cls}"{title}></div>')
 
@@ -423,7 +436,14 @@ def render_html(page_data, now, stale_after):
         parts.append("</tbody></table>")
         for cam in site["cams"]:
             parts.append('<div class="cam-block">')
+            parts.append('<div class="cam-header">')
+            if cam.get("thumb_url"):
+                parts.append(
+                    f'<img class="cam-thumb" src="{html.escape(cam["thumb_url"])}" '
+                    f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy">'
+                )
             parts.append(f'<div class="cam-name">{html.escape(cam["name"])}</div>')
+            parts.append("</div>")
             parts.append(_heatmap_html(cam["grid"]))
             parts.append("</div>")
 

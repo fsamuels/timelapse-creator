@@ -213,6 +213,13 @@ only, no auth" trust model as the rest of the page (see Access below), and it's 
 groundwork for a proper gallery view later (paginated by day/cam instead of a raw file
 tree) without having to revisit what's exposed.
 
+**Thumbnail (implemented):** each cam's per-cam block (above its heatmap) shows its newest
+frame — an `<img>` pointed straight at the file under the `archive/` symlink above, so
+there's no separate copy step to keep in sync. Placed there rather than in the status table
+(already the busiest part of the page) or floated next to the heatmap (which stays a fixed
+13-week width regardless, so it wasn't actually the growth risk it first looked like) — the
+per-cam block is the one spot in the layout already scoped to a single cam.
+
 **Access — decided:** home network only for now, and that now covers the raw archive too
 (the `/archive/` symlink above), not just the generated page — the archive was fine to
 expose since the trust boundary (home network, no auth) doesn't change. Tailscale (private

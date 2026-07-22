@@ -143,6 +143,21 @@ def test_frame_bytes_sums_file_sizes(tmp_path):
     assert generate.frame_bytes(frames) == 5
 
 
+def test_thumb_url_points_at_newest_frame_under_the_archive_link(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800"),
+        _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800"),
+    ]
+
+    url = generate.thumb_url(frames, tmp_path)
+
+    assert url == "archive/bluewood/summit/2026/07/2026-07-16T12-15-00-000000-0800.jpg"
+
+
+def test_thumb_url_none_when_no_frames(tmp_path):
+    assert generate.thumb_url([], tmp_path) is None
+
+
 def test_disk_usage_missing_dir_is_none(tmp_path):
     assert generate.disk_usage(tmp_path / "nope") is None
 
@@ -299,6 +314,30 @@ def test_render_html_keeps_full_detail_for_non_saved_outcomes(tmp_path):
     doc = generate.render_html(data, now, timedelta(hours=1))
 
     assert html.escape(error) in doc
+
+
+def test_render_html_shows_a_thumbnail_of_the_newest_frame(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
+    doc = generate.render_html(data, now, timedelta(hours=1))
+
+    assert (
+        '<img class="cam-thumb" '
+        'src="archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"'
+    ) in doc
+
+
+def test_heatmap_tooltip_leads_with_the_image_count(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
+    doc = generate.render_html(data, now, timedelta(hours=1))
+
+    assert 'title="2 images on 2026-07-16"' in doc
 
 
 def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
