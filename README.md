@@ -31,16 +31,23 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 
 ## What's implemented
 
-- `capture/config.yaml` — the two cams, as direct CameraFTP JPEG URLs
+- `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by GitHub Actions)
+- `capture/config.pi.yaml` — a second config, for the Pi: two Seattle (KING 5) cams to keep
+  developing the pipeline while Bluewood is off-grid, plus a `capture_log` path
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
-- `capture/main.py` — entrypoint: fetch each cam, skip failures/stale frames, save new ones
-- `.github/workflows/capture.yml` — runs the above every 15 minutes, commits new frames to `archive/`
+- `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
+  preserving today's behavior), fetches each cam, skips failures/stale frames, saves new ones, and
+  appends to a persisted capture log when the config provides a `capture_log` path
+- `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
+- `.github/workflows/capture.yml` — runs `capture/main.py` with no args every 15 minutes, commits new Bluewood frames to `archive/`
+- `deploy/pi/` — systemd service + timer units and a bring-up doc for running capture on the Pi
 
 ## Not implemented yet
 
 - The video builder (archive → mp4)
-- Anything running on the Pi (still in transit) — capture is 100% on GitHub Actions for now
+- Actually running any of this on the Pi hardware — the systemd units exist as code
+  (`deploy/pi/`) but the Pi itself hasn't arrived, so nothing has had an on-device smoke test
 - Long-term storage (frames are living in git as a deliberate short-term stopgap)
 
 ## Quick summary of decisions so far
@@ -51,9 +58,16 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit to take over
-  later (see `docs/open-questions.md` #1).
+- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit and will take
+  over via a systemd timer, with GitHub Actions running in parallel for a short trial before
+  being disabled (see `docs/open-questions.md` #1).
+- **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —
+  AWS S3 vs. Backblaze B2 vs. Google Drive, see `docs/open-questions.md` #5).
+- **Web interface:** a status/activity dashboard is planned — home-network-only, a
+  statically-regenerated Python page (no app server) reusing the archive's own filenames for
+  the activity graph, plus a new persisted capture log for health status (see
+  `docs/open-questions.md` #9 and #10).
 
 Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): what the video
 builder's output looks like (season video / daily clips / on-demand CLI), how outages should
-appear in the rendered video, and where frames/videos live long-term.
+appear in the rendered video, and which bucket provider to use for frame backup.

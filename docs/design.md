@@ -20,6 +20,12 @@
 - **Bonus find:** the cams are live in July (off-season) because the resort is doing
   maintenance and replacing the old 3-person lift with a high-speed quad — a second,
   time-sensitive timelapse subject alongside the season-long snow one.
+- **Cams are now generalized beyond Bluewood.** `capture/main.py` takes a `--config` flag
+  (default: `capture/config.yaml`, unchanged), and a second config,
+  `capture/config.pi.yaml`, adds two Seattle (KING 5) cams — added to keep developing the
+  pipeline while Bluewood is dark. GitHub Actions keeps capturing Bluewood via the original
+  config; the Pi config is for the Pi only, per the hand-off plan
+  (`docs/open-questions.md` #1).
 
 ## Architecture: two decoupled pieces
 
@@ -88,11 +94,28 @@ archive/
   timestamps run an hour behind true local time during PDT (summer) but stay strictly
   monotonic year-round. The offset is embedded in the filename (`-0800`) so it's
   unambiguous and self-describing.
-- **Not yet implemented:** a persistent `capture.log`. Right now each run's outcome (saved /
-  stale / fetch failed) only goes to Python's `logging` output, which lands in the GitHub
-  Actions run log (kept ~90 days by GitHub, not committed to the repo). Good enough today;
-  worth revisiting if we want outage history to outlive that window or to drive gap
-  annotations in the video builder.
+- **Implemented:** a persistent `capture.log` (`capture/capture_log.py`), one JSONL line per
+  cam per run (`ts`, `cam`, `outcome`, `detail`). Kept in its own module rather than folded
+  into `archive.py`, to keep that file's hash/stale-detection logic isolated (see CLAUDE.md's
+  testing rule). `capture/main.py` writes to it only when the loaded config has a
+  `capture_log` path key — `capture/config.yaml` (GitHub Actions) has none, so that path is
+  unchanged; `capture/config.pi.yaml` sets one, since the web interface's health/status view
+  and outage history need to outlive the GitHub Actions run log's ~90-day window.
+
+### Handing capture off to the Pi
+
+**Decided** (see `docs/open-questions.md` #1) for execution once the Raspberry Pi Zero W
+arrives: a systemd timer runs the same `capture/` code every 15 minutes on the Pi, writing to
+local disk instead of committing to git (see storage below). GitHub Actions keeps running in
+parallel for a ~1-2 week trial to confirm the Pi is reliable, then its schedule is disabled
+(manual `workflow_dispatch` stays available as an emergency fallback). Existing git-committed
+frames get migrated onto the Pi's storage so the archive has one home going forward, and
+`archive/` stops being tracked in git once the trial ends.
+
+The systemd units themselves now exist as code under `deploy/pi/`
+(`timelapse-capture.service`, `timelapse-capture.timer`) with a bring-up doc
+(`deploy/pi/README.md`), pointed at `capture/config.pi.yaml`. This is scaffolding only — the
+Pi hardware hasn't arrived yet, so none of it has been smoke-tested on-device.
 
 ## Component 2: the video builder
 
@@ -133,10 +156,42 @@ Three options were discussed (decision pending — see open questions):
 | Timestamp overlay + skip *(leaning toward this)* | Same seamless jump, but the burned-in clock makes outages visible | one `drawtext` filter |
 | Placeholder "power out" cards | Outages become visible events in the video | builder must synthesize card frames from gap detection in the capture log |
 
+## Component 3: the web interface
+
+**Not implemented yet; stack and shape decided** (see `docs/open-questions.md` #9). Two
+goals: confirm the capture pipeline is still working, and show a GitHub-style activity graph
+of images downloaded per day.
+
+- **Runs on the Pi**, home network only. A small Python script (reusing `capture/archive.py`'s
+  filename/timestamp parsing) regenerates a static HTML page after each capture run, served
+  by nginx or `python -m http.server` under systemd — no persistent app server, matching the
+  data's own cadence (it only changes every 15 minutes) and the project's existing batch-job
+  shape rather than adding an always-on service to a single-core, 512MB Pi Zero W.
+- **Activity heatmap:** derived directly from archive filenames — no new data source needed.
+- **Health/status view:** last successful frame per cam, last-run outcome, a staleness flag.
+  Needs the persisted `capture.log` from Component 1 above — status can't be derived from
+  successful frames alone, since a stuck/failing cam produces *no* new archive entries.
+- **Remote access:** not built now; Tailscale is the documented future option, and would also
+  cover remote SSH to the Pi for maintenance, not just this page.
+
+## Storage: frames and bucket sync
+
+**Decided** (see `docs/open-questions.md` #5): frames are written to local disk on the Pi at
+capture time, then synced periodically to a cloud bucket via `rclone` as an off-device
+backup. Bucket provider (AWS S3 vs. Backblaze B2 vs. Google Drive) is still open — `rclone`
+backs all three with the same sync command, so the choice doesn't change this mechanism.
+Google Photos was considered and set aside for *raw frame* storage specifically — its
+album/browsing model and 2025 API restrictions to app-created content are a poor fit for the
+exact-byte round-tripping that stale-frame hash detection depends on — but remains a good fit
+for finished videos (see deferred ideas below), which are naturally photo-library-shaped.
+
 ## Deferred / follow-on ideas
 
 - **Upload finished videos to Google Photos** automatically (the original impetus behind
-  the `gphotos-uploader` repo name).
+  the `gphotos-uploader` repo name) — a better fit for finished videos than for raw frames,
+  see storage section above.
 - **Backfill** missed days from OnTheSnow's daily-image archive.
 - Generalize beyond Bluewood: cams defined in a small config file (name, URL or stream,
   fetch method), so adding a third camera is a config change, not a code change.
+- **Tailscale** for remote access to the web interface and Pi SSH, once wanted beyond the
+  home network.
