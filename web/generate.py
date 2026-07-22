@@ -322,9 +322,12 @@ def _status_row(cam_name, url, health, cam_bytes, now):
     )
     outcome = health["outcome"]
     if outcome:
-        run_cell = html.escape(str(outcome.get("outcome", "")))
+        outcome_name = outcome.get("outcome", "")
+        run_cell = html.escape(outcome_name)
         detail = outcome.get("detail")
         if detail:
+            if outcome_name == "saved":
+                detail = Path(str(detail)).name  # just the filename, not the full save path
             run_cell += f' <span class="muted">{html.escape(str(detail))}</span>'
     else:
         run_cell = '<span class="muted">—</span>'
