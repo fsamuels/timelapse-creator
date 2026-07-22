@@ -288,12 +288,12 @@ th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: u
   background: color-mix(in srgb, var(--stale) 18%, transparent); }}
 .muted {{ color: var(--muted); }}
 .cam-block {{ margin: 1.25rem 0; }}
-.cam-header {{ display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem;
-  flex-wrap: wrap; }}
+.cam-name {{ font-weight: 600; margin-bottom: .4rem; }}
+.cam-row {{ display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }}
 .cam-thumb {{ height: 108px; width: auto; max-width: 160px; object-fit: cover;
-  border-radius: .35rem; border: 1px solid var(--border); background: var(--card); }}
-.cam-name {{ font-weight: 600; }}
-.heatmap {{ overflow-x: auto; padding-bottom: .25rem; }}
+  border-radius: .35rem; border: 1px solid var(--border); background: var(--card);
+  flex: 0 0 auto; }}
+.heatmap {{ overflow-x: auto; padding-bottom: .25rem; min-width: 0; }}
 .hm-grid {{ display: inline-grid;
   grid-template-columns: 28px repeat({HEATMAP_WEEKS}, 11px);
   grid-auto-rows: 11px; gap: 3px; align-items: center; }}
@@ -436,15 +436,15 @@ def render_html(page_data, now, stale_after):
         parts.append("</tbody></table>")
         for cam in site["cams"]:
             parts.append('<div class="cam-block">')
-            parts.append('<div class="cam-header">')
+            parts.append(f'<div class="cam-name">{html.escape(cam["name"])}</div>')
+            parts.append('<div class="cam-row">')
+            parts.append(_heatmap_html(cam["grid"]))
             if cam.get("thumb_url"):
                 parts.append(
                     f'<img class="cam-thumb" src="{html.escape(cam["thumb_url"])}" '
                     f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy">'
                 )
-            parts.append(f'<div class="cam-name">{html.escape(cam["name"])}</div>')
             parts.append("</div>")
-            parts.append(_heatmap_html(cam["grid"]))
             parts.append("</div>")
 
     parts.append(_legend_html())

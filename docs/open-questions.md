@@ -213,12 +213,12 @@ only, no auth" trust model as the rest of the page (see Access below), and it's 
 groundwork for a proper gallery view later (paginated by day/cam instead of a raw file
 tree) without having to revisit what's exposed.
 
-**Thumbnail (implemented):** each cam's per-cam block (above its heatmap) shows its newest
-frame — an `<img>` pointed straight at the file under the `archive/` symlink above, so
-there's no separate copy step to keep in sync. Placed there rather than in the status table
-(already the busiest part of the page) or floated next to the heatmap (which stays a fixed
-13-week width regardless, so it wasn't actually the growth risk it first looked like) — the
-per-cam block is the one spot in the layout already scoped to a single cam.
+**Thumbnail (implemented):** each cam's per-cam block shows its newest frame to the right of
+its heatmap — an `<img>` pointed straight at the file under the `archive/` symlink above, so
+there's no separate copy step to keep in sync. Placed in the per-cam block rather than the
+status table (already the busiest part of the page), and beside the heatmap grid is safe
+because that grid stays a fixed 13-week width regardless of archive size — it wasn't
+actually the growth risk it first looked like. Wraps below the heatmap on narrow viewports.
 
 **Access — decided:** home network only for now, and that now covers the raw archive too
 (the `/archive/` symlink above), not just the generated page — the archive was fine to
