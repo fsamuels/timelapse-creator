@@ -160,10 +160,17 @@ to "PRs only" today would also block the capture bot. Once GitHub Actions is dis
 archived frames are removed from git (question 5's real answer), revisit this and add a
 GitHub ruleset requiring PRs on `main` for everyone, no bypass needed anymore.
 
-## 8. The web interface (decided: what to build, on what stack)
+## 8. The web interface (implemented)
 
 Two goals: confirm the capture pipeline is still working, and show a GitHub-style activity
 graph of images downloaded per day.
+
+**Implemented** as `web/generate.py`, matching the decided stack below: it reuses
+`capture/archive.py`'s `parse_frame_time` and regenerates one self-contained static HTML
+page (inline CSS, light/dark aware), run as an `ExecStartPost` on the capture service and
+served by `deploy/pi/timelapse-web.service` (`python -m http.server`). See `docs/design.md`
+Component 3. Only the on-Pi systemd wiring is still untested (no hardware yet); the
+generator itself has been run and eyeballed locally against real and sample frames.
 
 **Stack — decided:** a small Python script (reusing `capture/archive.py`'s filename/timestamp
 helpers directly) regenerates a static HTML page after each capture run, served by nginx or
@@ -182,9 +189,10 @@ Options considered and set aside for now:
 
 **Two views:**
 - **Activity heatmap** — derived directly from archive filenames (the timestamp is already
-  in the path); no new data source needed. Open detail: does it span the full season
-  (including the pre-Pi GitHub Actions era) or just since the Pi took over — leaning full
-  season for the more satisfying "contribution graph" story, but not blocking.
+  in the path); no new data source needed. **Decided: Pi-era only** — the generator reads
+  `archive_dir` from the config, so on the Pi it shows only Pi-captured frames. This needs
+  no explicit era-filtering code: it's just a consequence of pointing at the Pi's local
+  archive rather than the repo's git-committed GitHub Actions history.
 - **Health/status** — last successful frame per cam, last-run outcome, a "stale — no update
   in over N hours" flag. This *does* need new data: see question 9.
 
@@ -228,7 +236,10 @@ only written every 15 minutes per cam.
       existing AWS account before deciding; wire up `rclone` sync either way
 - [ ] Keep GitHub Actions running in parallel for the trial period (question 1), then disable
       the schedule and stop tracking `archive/` in git
-- [ ] Build the static-HTML web interface (question 8) once the capture log exists to read from
+- [x] Build the static-HTML web interface (question 8) — `web/generate.py` (health/status
+      + per-cam activity heatmap), regenerated via the capture service's `ExecStartPost`
+      and served by `deploy/pi/timelapse-web.service`. Verified locally; systemd wiring
+      untested until the Pi arrives.
 - [ ] Build the video builder (`docs/design.md` Component 2) — currently just a design, no code
 - [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed
       before the video builder can be built, not just designed

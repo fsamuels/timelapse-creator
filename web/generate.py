@@ -1,0 +1,398 @@
+"""Static status-page generator for timelapse-creator.
+
+Reads the frame archive (via the timestamped filenames) and the persisted capture
+log, then writes a single self-contained HTML page with two views:
+
+  * Health/status — last frame per cam, how long ago, and the last capture-run
+    outcome, so you can tell at a glance whether capture is still working. A cam
+    down for the night looks the same as a broken one from frames alone, which is
+    why this reads the capture log rather than only the archive.
+  * Activity heatmap — a GitHub-style contribution grid of frames captured per
+    day, per cam.
+
+Designed to run on the Pi after each capture (see deploy/pi/), regenerating the
+page — no persistent app server. It reads ``archive_dir`` from the config, so it
+naturally shows exactly the frames in that directory (on the Pi: Pi-captured
+frames) with no source-era filtering logic of its own.
+"""
+
+import argparse
+import html
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import yaml
+
+from capture.archive import PACIFIC, parse_frame_time
+
+CONFIG_PATH = Path(__file__).parent.parent / "capture" / "config.yaml"
+DEFAULT_OUTPUT = "site/index.html"
+HEATMAP_WEEKS = 13  # ~a quarter, the recent-activity window shown per cam
+
+
+def scan_archive(archive_dir):
+    """Return ``{site: {cam: [frame Path, ...sorted]}}`` for archive_dir.
+
+    Expects the ``archive/<site>/<cam>/YYYY/MM/*.jpg`` layout. Missing or empty
+    directories yield an empty mapping rather than an error.
+    """
+    archive_dir = Path(archive_dir)
+    sites = {}
+    if not archive_dir.is_dir():
+        return sites
+    for site_dir in sorted(p for p in archive_dir.iterdir() if p.is_dir()):
+        cams = {}
+        for cam_dir in sorted(p for p in site_dir.iterdir() if p.is_dir()):
+            frames = sorted(cam_dir.rglob("*.jpg"))
+            if frames:
+                cams[cam_dir.name] = frames
+        if cams:
+            sites[site_dir.name] = cams
+    return sites
+
+
+def read_capture_log(log_path):
+    """Parse the JSONL capture log into a list of entries; [] if missing."""
+    if not log_path:
+        return []
+    log_path = Path(log_path)
+    if not log_path.is_file():
+        return []
+    entries = []
+    for line in log_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue  # tolerate a partially written trailing line
+    return entries
+
+
+def latest_outcomes(entries):
+    """Map each cam to its most recent log entry (the log is append-only)."""
+    latest = {}
+    for entry in entries:
+        cam = entry.get("cam")
+        if cam is not None:
+            latest[cam] = entry
+    return latest
+
+
+def daily_counts(frames):
+    """Count frames per capture date (a ``{date: int}`` mapping)."""
+    counts = {}
+    for frame in frames:
+        day = parse_frame_time(frame).date()
+        counts[day] = counts.get(day, 0) + 1
+    return counts
+
+
+def cam_health(frames, outcome, now, stale_after):
+    """Summarize one cam's health for the status view."""
+    last_time = parse_frame_time(frames[-1]) if frames else None
+    is_stale = last_time is None or (now - last_time) > stale_after
+    return {
+        "frame_count": len(frames),
+        "last_time": last_time,
+        "is_stale": is_stale,
+        "outcome": outcome,
+    }
+
+
+def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS):
+    """Build a GitHub-style grid: a list of weeks, each a list of 7 day cells.
+
+    Weeks run Sunday-first and oldest-first; the last column contains end_date.
+    Each cell is ``{"date", "count", "level", "future"}`` where level is a 0-4
+    intensity bucket relative to the busiest day in the window and future cells
+    (dates after end_date, padding out the final week) are marked so the page
+    can render them blank.
+    """
+    days_since_sunday = (end_date.weekday() + 1) % 7
+    last_week_start = end_date - timedelta(days=days_since_sunday)
+    peak = max(counts.values(), default=0)
+
+    grid = []
+    for w in range(weeks):
+        week_start = last_week_start - timedelta(weeks=weeks - 1 - w)
+        week = []
+        for d in range(7):
+            day = week_start + timedelta(days=d)
+            count = counts.get(day, 0)
+            week.append(
+                {
+                    "date": day,
+                    "count": count,
+                    "level": _level(count, peak),
+                    "future": day > end_date,
+                }
+            )
+        grid.append(week)
+    return grid
+
+
+def _level(count, peak):
+    if count == 0 or peak == 0:
+        return 0
+    return min(4, 1 + int(3 * (count - 1) / peak))
+
+
+def _human_ago(delta):
+    seconds = int(delta.total_seconds())
+    if seconds < 90:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 90:
+        return f"{minutes} min ago"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} hr ago"
+    return f"{hours // 24} days ago"
+
+
+def build_page_data(archive_dir, log_path, now, stale_after):
+    """Gather everything the template needs from the archive and the log."""
+    sites = scan_archive(archive_dir)
+    outcomes = latest_outcomes(read_capture_log(log_path))
+    today = now.date()
+
+    data = []
+    for site, cams in sites.items():
+        cam_views = []
+        for cam, frames in cams.items():
+            cam_views.append(
+                {
+                    "name": cam,
+                    "health": cam_health(frames, outcomes.get(cam), now, stale_after),
+                    "grid": heatmap_grid(daily_counts(frames), today),
+                }
+            )
+        data.append({"site": site, "cams": cam_views})
+    return data
+
+
+# --- rendering -------------------------------------------------------------
+
+_STYLE = f"""
+:root {{
+  --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22;
+  --border: #30363d; --ok: #3fb950; --stale: #d29922;
+  --l0:#161b22; --l1:#0b2c5c; --l2:#15468a; --l3:#2b6cb8; --l4:#4c9aff;
+}}
+@media (prefers-color-scheme: light) {{
+  :root {{
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
+    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
+    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
+  }}
+}}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
+main {{ max-width: 900px; margin: 0 auto; }}
+h1 {{ font-size: 1.5rem; margin: 0 0 .25rem; }}
+h2 {{ font-size: 1.05rem; margin: 2rem 0 .75rem; }}
+.sub {{ color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }}
+th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .03em; }}
+.badge {{ display: inline-block; padding: .1rem .5rem; border-radius: 2rem; font-size: .8rem;
+  font-weight: 600; }}
+.badge.ok {{ color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }}
+.badge.stale {{ color: var(--stale);
+  background: color-mix(in srgb, var(--stale) 18%, transparent); }}
+.muted {{ color: var(--muted); }}
+.cam-block {{ margin: 1.25rem 0; }}
+.cam-name {{ font-weight: 600; margin-bottom: .4rem; }}
+.heatmap {{ overflow-x: auto; padding-bottom: .25rem; }}
+.hm-grid {{ display: inline-grid;
+  grid-template-columns: 28px repeat({HEATMAP_WEEKS}, 11px);
+  grid-auto-rows: 11px; gap: 3px; align-items: center; }}
+.hm-corner {{ width: 28px; height: 11px; }}
+.hm-month {{ font-size: .7rem; line-height: 11px; color: var(--muted);
+  white-space: nowrap; overflow: visible; }}
+.hm-wd {{ font-size: .7rem; line-height: 11px; color: var(--muted);
+  text-align: right; padding-right: 4px; white-space: nowrap; }}
+.day {{ width: 11px; height: 11px; border-radius: 2px; background: var(--l0); }}
+.day.future {{ background: transparent; }}
+.day.l1 {{ background: var(--l1); }} .day.l2 {{ background: var(--l2); }}
+.day.l3 {{ background: var(--l3); }} .day.l4 {{ background: var(--l4); }}
+.legend {{ display: flex; align-items: center; gap: 4px; color: var(--muted);
+  font-size: .78rem; margin-top: .5rem; }}
+.legend .day {{ display: inline-block; }}
+footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid var(--border); padding-top: 1rem; }}
+"""
+
+
+def _status_row(cam_name, health, now):
+    last = health["last_time"]
+    if last is None:
+        last_cell = '<span class="muted">no frames yet</span>'
+    else:
+        last_cell = (
+            f"{html.escape(last.strftime('%Y-%m-%d %H:%M'))} "
+            f'<span class="muted">({html.escape(_human_ago(now - last))})</span>'
+        )
+    badge = (
+        '<span class="badge stale">stale</span>'
+        if health["is_stale"]
+        else '<span class="badge ok">live</span>'
+    )
+    outcome = health["outcome"]
+    if outcome:
+        run_cell = html.escape(str(outcome.get("outcome", "")))
+        detail = outcome.get("detail")
+        if detail:
+            run_cell += f' <span class="muted">{html.escape(str(detail))}</span>'
+    else:
+        run_cell = '<span class="muted">—</span>'
+    return (
+        f"<tr><td>{html.escape(cam_name)}</td><td>{badge}</td>"
+        f"<td>{last_cell}</td><td>{health['frame_count']}</td><td>{run_cell}</td></tr>"
+    )
+
+
+_WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
+
+
+def _heatmap_html(grid):
+    """Render a GitHub-style grid with month labels on top and weekday labels on the left.
+
+    ``grid`` is a list of week-columns (oldest -> newest), each a list of 7 day
+    cells ordered Sunday..Saturday (see heatmap_grid). Labels are placed via a
+    single CSS grid so they line up with the 11px cells / 3px gaps.
+    """
+    cells = ['<div class="hm-corner"></div>']
+
+    prev_month = None
+    last_label_col = -3
+    for i, week in enumerate(grid):
+        first_date = week[0]["date"]
+        month_key = (first_date.year, first_date.month)
+        if month_key != prev_month and (i - last_label_col) >= 3:
+            label = first_date.strftime("%b")
+            last_label_col = i
+        else:
+            label = ""
+        prev_month = month_key
+        cells.append(f'<div class="hm-month">{label}</div>')
+
+    for row in range(7):
+        cells.append(f'<div class="hm-wd">{_WEEKDAY_LABELS.get(row, "")}</div>')
+        for week in grid:
+            cell = week[row]
+            if cell["future"]:
+                cls = "day future"
+                title = ""
+            else:
+                n = cell["count"]
+                title = (
+                    f' title="{cell["date"].isoformat()} · ' f'{n} image{"s" if n != 1 else ""}"'
+                )
+                cls = f"day l{cell['level']}"
+            cells.append(f'<div class="{cls}"{title}></div>')
+
+    return '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div></div>"
+
+
+def render_html(page_data, now, stale_after):
+    parts = [
+        "<!doctype html>",
+        '<html lang="en"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        '<meta http-equiv="refresh" content="900">',  # reload every 15 min
+        "<title>timelapse-creator status</title>",
+        f"<style>{_STYLE}</style></head><body><main>",
+        "<h1>timelapse-creator status</h1>",
+        f'<p class="sub">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M %Z"))} · '
+        f'"stale" = no new frame in over {_format_hours(stale_after)}</p>',
+    ]
+
+    if not page_data:
+        parts.append('<p class="muted">No frames archived yet.</p>')
+
+    for site in page_data:
+        parts.append(f"<h2>{html.escape(site['site'])}</h2>")
+        parts.append(
+            "<table><thead><tr><th>Cam</th><th>Status</th><th>Last frame</th>"
+            "<th>Frames</th><th>Last run</th></tr></thead><tbody>"
+        )
+        for cam in site["cams"]:
+            parts.append(_status_row(cam["name"], cam["health"], now))
+        parts.append("</tbody></table>")
+        for cam in site["cams"]:
+            parts.append('<div class="cam-block">')
+            parts.append(f'<div class="cam-name">{html.escape(cam["name"])}</div>')
+            parts.append(_heatmap_html(cam["grid"]))
+            parts.append("</div>")
+
+    parts.append(_legend_html())
+    parts.append(
+        f"<footer>Static page, regenerated after each capture run · "
+        f"{html.escape(now.isoformat())}</footer>"
+    )
+    parts.append("</main></body></html>")
+    return "\n".join(parts)
+
+
+def _legend_html():
+    cells = '<div class="day"></div>' + "".join(
+        f'<div class="day l{lvl}"></div>' for lvl in range(1, 5)
+    )
+    return f'<div class="legend"><span>Less</span>{cells}<span>More</span></div>'
+
+
+def _format_hours(delta):
+    hours = delta.total_seconds() / 3600
+    if hours == int(hours):
+        hours = int(hours)
+    return f"{hours} hr"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate the static status page.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=CONFIG_PATH,
+        help="Capture config YAML (for archive_dir / capture_log) (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help=f"Output HTML path (default: config's web_output, else {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument(
+        "--stale-hours",
+        type=float,
+        default=1.0,
+        help="Flag a cam 'stale' after this many hours without a new frame (default: %(default)s)",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    config = yaml.safe_load(args.config.read_text())
+    archive_dir = config["archive_dir"]
+    log_path = config.get("capture_log")
+    output = args.output or Path(config.get("web_output", DEFAULT_OUTPUT))
+
+    now = datetime.now(PACIFIC)
+    stale_after = timedelta(hours=args.stale_hours)
+    page_data = build_page_data(archive_dir, log_path, now, stale_after)
+    html_doc = render_html(page_data, now, stale_after)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(html_doc)
+    print(f"wrote {output} ({len(page_data)} site(s))")
+
+
+if __name__ == "__main__":
+    main()
