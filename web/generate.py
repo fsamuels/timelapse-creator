@@ -153,10 +153,15 @@ def _human_ago(delta):
     return f"{hours // 24} days ago"
 
 
-def build_page_data(archive_dir, log_path, now, stale_after):
-    """Gather everything the template needs from the archive and the log."""
+def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
+    """Gather everything the template needs from the archive and the log.
+
+    ``cam_config`` is the capture config's ``cams`` mapping (cam name -> dict
+    with a ``url`` key), used to link each cam's name to its live image.
+    """
     sites = scan_archive(archive_dir)
     outcomes = latest_outcomes(read_capture_log(log_path))
+    cam_config = cam_config or {}
     today = now.date()
 
     data = []
@@ -166,6 +171,7 @@ def build_page_data(archive_dir, log_path, now, stale_after):
             cam_views.append(
                 {
                     "name": cam,
+                    "url": cam_config.get(cam, {}).get("url"),
                     "health": cam_health(frames, outcomes.get(cam), now, stale_after),
                     "grid": heatmap_grid(daily_counts(frames), today),
                 }
@@ -229,7 +235,14 @@ footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
 """
 
 
-def _status_row(cam_name, health, now):
+def _status_row(cam_name, url, health, now):
+    if url:
+        name_cell = (
+            f'<a href="{html.escape(url)}" target="_blank" rel="noopener">'
+            f"{html.escape(cam_name)}</a>"
+        )
+    else:
+        name_cell = html.escape(cam_name)
     last = health["last_time"]
     if last is None:
         last_cell = '<span class="muted">no frames yet</span>'
@@ -252,7 +265,7 @@ def _status_row(cam_name, health, now):
     else:
         run_cell = '<span class="muted">—</span>'
     return (
-        f"<tr><td>{html.escape(cam_name)}</td><td>{badge}</td>"
+        f"<tr><td>{name_cell}</td><td>{badge}</td>"
         f"<td>{last_cell}</td><td>{health['frame_count']}</td><td>{run_cell}</td></tr>"
     )
 
@@ -323,7 +336,7 @@ def render_html(page_data, now, stale_after):
             "<th>Frames</th><th>Last run</th></tr></thead><tbody>"
         )
         for cam in site["cams"]:
-            parts.append(_status_row(cam["name"], cam["health"], now))
+            parts.append(_status_row(cam["name"], cam.get("url"), cam["health"], now))
         parts.append("</tbody></table>")
         for cam in site["cams"]:
             parts.append('<div class="cam-block">')
@@ -386,7 +399,9 @@ def main():
 
     now = datetime.now(PACIFIC)
     stale_after = timedelta(hours=args.stale_hours)
-    page_data = build_page_data(archive_dir, log_path, now, stale_after)
+    page_data = build_page_data(
+        archive_dir, log_path, now, stale_after, cam_config=config.get("cams")
+    )
     html_doc = render_html(page_data, now, stale_after)
 
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -133,6 +133,47 @@ def test_heatmap_grid_marks_future_cells():
     assert all(c["date"] > end for c in future)
 
 
+def test_build_page_data_looks_up_cam_url(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        timedelta(hours=1),
+        cam_config={"summit": {"url": "https://example.com/summit.jpg"}},
+    )
+
+    assert data[0]["cams"][0]["url"] == "https://example.com/summit.jpg"
+
+
+def test_build_page_data_url_missing_for_unconfigured_cam(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
+
+    assert data[0]["cams"][0]["url"] is None
+
+
+def test_render_html_links_cam_name_to_its_url(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        timedelta(hours=1),
+        cam_config={"summit": {"url": "https://example.com/summit.jpg"}},
+    )
+    doc = generate.render_html(data, now, timedelta(hours=1))
+
+    assert '<a href="https://example.com/summit.jpg"' in doc
+    assert ">summit</a>" in doc
+
+
 def test_render_html_is_self_contained_and_shows_cams(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
