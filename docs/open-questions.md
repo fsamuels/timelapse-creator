@@ -5,14 +5,14 @@ recommendations. None of these are locked in yet.
 
 ## 1. Where does the capture job run? (decided)
 
-**Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now deployed and captures all four
+**Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now deployed and captures all six
 cams every 15 minutes via a systemd timer. GitHub Actions cron still runs in parallel,
 capturing Bluewood, during the hand-off trial (see below). The Pi was ordered 2026-07-16.
 
 ### The Pi hand-off plan (decided; trial in progress)
 
 **Trial status:** the Pi (`timelapse-pi`) is deployed and live — running the systemd capture
-timer against `capture/config.pi.yaml` (all four cams) and serving the status page at
+timer against `capture/config.pi.yaml` (all six cams) and serving the status page at
 `http://timelapse-pi.local:8080/`. GitHub Actions continues capturing Bluewood via
 `capture/config.yaml` in parallel during the comparison window. Still to do before the trial
 ends: migrate the git-committed Bluewood frames onto the Pi, disable the Actions schedule,
@@ -71,6 +71,10 @@ Original option comparison, for reference:
 | **Every 15 min** ✅ decided | ~50 | ~1–2 GB | Works on every platform incl. GitHub Actions; plenty for both daily and season videos. Confirmed free — this repo is public, so GitHub Actions minutes are unlimited. |
 | Every 5 min | ~150 | ~3–6 GB | Smoother daily clips (clouds, lifts, parking lot); pushing the limits of GitHub Actions scheduling |
 | Every 30–60 min | ~12–25 | < 1 GB | Fine for a season-long video; too choppy for interesting daily clips |
+
+The "storage/season" column above was estimated for the original 2 Bluewood cams. The Pi
+now captures 6 cams (2 Bluewood, 2 Seattle, 2 North Carolina) at the same 15-min cadence —
+see question 11 for the revised estimate and why it's driving an SD card upgrade.
 
 ## 3. What video output do we actually want?
 
@@ -244,7 +248,49 @@ wired into `capture/main.py` behind a `capture_log` config key — set in
 unchanged. Log rotation policy is still open, though low-stakes given the line is tiny and
 only written every 15 minutes per cam.
 
-## 10. Next concrete steps
+## 10. North Carolina cams (resolved)
+
+Two new cams were added to `capture/config.pi.yaml` under a new `north-carolina` site,
+Pi-only (no `config.yaml` / GitHub Actions equivalent — unrelated to the Bluewood hand-off
+trial):
+
+- **UNCA tower cam:** `https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20UNCA%20EcoNet.png`
+- **Nantahala Outdoor Center cam:** `https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20Nantahala%20Outdoor%20Center.png`
+
+Both are hosted directly by WLOS (an Asheville TV station) as plain PNG snapshots — `type:
+image` in the config, same `fetch_image` path as every other image cam. Content hashing for
+stale-frame detection doesn't care that these are PNGs rather than JPEGs; it compares raw
+bytes either way. Not yet verified from this environment: the outbound network policy here
+blocks `wlos.com`, so the URLs are wired in unverified from the sandbox — the Pi's own
+network isn't subject to that restriction, so first-run behavior should be checked via
+`journalctl -u timelapse-capture.service` after deploying, same as any new cam.
+
+The status page picks these up with no code changes — `web/generate.py` derives its site/cam
+list from whatever's actually in `archive_dir`, and cam URLs from the config, so a new site
+just appears once the Pi captures its first frame.
+
+## 11. SD card capacity migration (documented, not yet executed)
+
+The Pi currently boots from a **4GB** microSD card. Two things are now squeezing it:
+
+- The OS + venv + dependencies already use a meaningful chunk of a 4GB card before any
+  frames are captured.
+- The archive just grew from 4 cams to 6 (see question 10) — using question 2's ~1–2 GB/
+  season estimate for 2 cams as a baseline, 6 cams at the same 15-min cadence project to
+  roughly **~3–6 GB/season**, likely more: the North Carolina cams are PNG snapshots, which
+  tend to be larger per frame than the Bluewood/Seattle cams' JPEGs. That alone can exceed
+  a 4GB card within a single season.
+
+**Recommendation:** move to a 64GB card before the archive fills the current one. The
+process is documented as a runbook in **`docs/sd-card-migration.md`** — a fresh-OS-install +
+`rsync`-the-archive-over approach (recommended over a full-disk `dd` clone, since it doubles
+as a from-scratch verification that `deploy/pi/README.md`'s bring-up steps still work, and
+sidesteps partition-resize fuss). **Not yet executed** — this is the documented process for
+when it's time, not a completed migration. In the meantime, watch actual growth via the
+status page's per-cam and total disk-usage figures (`web/generate.py`, already built) rather
+than relying on the estimate above.
+
+## 12. Next concrete steps
 
 - [x] Add the persisted capture log (question 9) — `capture/capture_log.py`, wired into
       `capture/main.py` via `capture/config.pi.yaml`'s `capture_log` key
@@ -253,9 +299,12 @@ only written every 15 minutes per cam.
       doc (`deploy/pi/README.md`)
 - [x] Pi Zero W deployed (`timelapse-pi`) and brought up per "The Pi hand-off plan"
       (question 1) using the `deploy/pi/` units; capture runs on the systemd timer against
-      `capture/config.pi.yaml` (all four cams)
+      `capture/config.pi.yaml` (all six cams)
 - [x] Confirm the Pi writes to real local disk (`/var/lib/timelapse/archive`) end-to-end on
       hardware, in the `<site>/<cam>/` layout
+- [x] Add the two North Carolina cams (question 10) — `capture/config.pi.yaml`, Pi-only
+- [ ] Execute the SD card migration (question 11) — runbook is written
+      (`docs/sd-card-migration.md`), migration itself not yet done
 - [ ] Migrate the existing git-committed Bluewood frames onto the Pi's storage so the archive
       has one home (question 1, question 5)
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the
