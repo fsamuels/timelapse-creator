@@ -154,6 +154,12 @@ stretch of both cams being fully dark (e.g. a deep off-season closure) would eve
 silently turn the schedule off, needing a manual re-enable. Relevant again during the trial
 period in question 1, less so afterward once the schedule is disabled deliberately.
 
+**Branch protection follow-up:** `main` currently has no GitHub branch protection, so the
+`capture.yml` workflow's direct commits are one reason it's been left open — locking `main`
+to "PRs only" today would also block the capture bot. Once GitHub Actions is disabled and
+archived frames are removed from git (question 5's real answer), revisit this and add a
+GitHub ruleset requiring PRs on `main` for everyone, no bypass needed anymore.
+
 ## 8. The web interface (decided: what to build, on what stack)
 
 Two goals: confirm the capture pipeline is still working, and show a GitHub-style activity
@@ -226,3 +232,5 @@ only written every 15 minutes per cam.
 - [ ] Build the video builder (`docs/design.md` Component 2) — currently just a design, no code
 - [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed
       before the video builder can be built, not just designed
+- [ ] Once GitHub Actions is disabled and archived frames are removed from git, lock `main`
+      down with a GitHub ruleset requiring PRs for everyone (see question 7 follow-up)
