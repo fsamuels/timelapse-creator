@@ -32,7 +32,14 @@ def parse_args():
         "--min-matches",
         type=int,
         default=10,
-        help="Minimum good feature matches required to trust an alignment (default: %(default)s)",
+        help=(
+            "Minimum feature matches that must agree on a single alignment for a photo "
+            "to count as part of this sequence (default: %(default)s). This is the "
+            "tolerance knob: raise it to more strictly exclude photos that don't clearly "
+            "match --reference (e.g. unrelated shots mixed into the input directory), "
+            "lower it to be more lenient. Photos that don't clear the bar are skipped "
+            "and reported, not silently dropped."
+        ),
     )
     parser.add_argument(
         "--size",

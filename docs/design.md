@@ -231,23 +231,31 @@ off to the (not-yet-built) video builder.
 python -m normalize.main path/to/drone-photos path/to/normalized --size 1920x1080
 ```
 
-Pipeline, entirely local (OpenCV + numpy, no network calls, no AI model):
+Pipeline, entirely local (OpenCV + Pillow + numpy, no network calls, no AI model):
 
-1. **Detect features** (ORB) in a reference frame (first photo, sorted by filename, unless
-   `--reference` overrides it) and in each other photo.
-2. **Match and estimate a similarity transform** (rotation + uniform scale + translation —
+1. **Order** photos by EXIF capture time (`DateTimeOriginal`, falling back to the `DateTime`
+   tag, falling back to file mtime if a photo has no EXIF data at all) — not filename, since
+   drone photo filenames aren't necessarily chronological.
+2. **Detect features** (ORB) in a reference frame (first photo in that capture-time order,
+   unless `--reference` overrides it) and in each other photo.
+3. **Match and estimate a similarity transform** (rotation + uniform scale + translation —
    deliberately not a full projective homography, since drone frames are slightly
    shifted/tilted/zoomed versions of roughly the same shot rather than different viewing
-   angles; a homography would over-fit and risk keystone distortion). A frame with too few
-   good matches (`--min-matches`, default 10 — a low-texture scene like open snow or sky)
-   is skipped and reported rather than forced through a bad alignment.
-3. **Warp** each photo into the reference's coordinate space, tracking which pixels are real
+   angles; a homography would over-fit and risk keystone distortion), then check how many of
+   those matches actually agree with one consistent transform (RANSAC inliers). A photo whose
+   inlier count is below `--min-matches` (default 10) — a low-texture scene like open snow or
+   sky, or simply an unrelated photo that doesn't belong in this sequence — is skipped and
+   reported rather than forced through a bad alignment. This is the tolerance knob: raise
+   `--min-matches` to more strictly exclude photos that don't clearly match the reference
+   (useful when pointing it at a directory with unrelated shots mixed in, so they don't have
+   to be sorted out by hand first), lower it to be more lenient.
+4. **Warp** each photo into the reference's coordinate space, tracking which pixels are real
    image data vs. the black border the warp introduces.
-4. **Crop to the common region**: intersect every frame's valid-pixel mask, then shrink an
+5. **Crop to the common region**: intersect every frame's valid-pixel mask, then shrink an
    axis-aligned box border-by-border (whichever edge has the fewest valid pixels) until it's
    fully valid — a simple, deterministic way to guarantee no black edges without solving for
    the true largest inscribed rectangle.
-5. **Resize** (optional, `--size`) to a final fixed output size.
+6. **Resize** (optional, `--size`) to a final fixed output size.
 
 This is intentionally a standalone preprocessing step rather than folded into
 `capture/archive.py` — it's a different pipeline shape (batch import vs. scheduled capture)

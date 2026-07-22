@@ -57,9 +57,13 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   serving the status page
 - `normalize/` — aligns and crops a directory of not-quite-fixed-position photos (e.g. drone
   shots) onto a common frame so they cut into a smooth timelapse; a separate, on-demand batch
-  input path from the scheduled webcam capture above. Runs entirely locally (OpenCV feature
+  input path from the scheduled webcam capture above. Photos are processed in EXIF
+  capture-time order, and any photo that doesn't match the reference closely enough
+  (`--min-matches`) is automatically skipped and reported, so unrelated shots mixed into the
+  input directory don't need to be sorted out by hand. Runs entirely locally (OpenCV feature
   matching + a similarity transform, no network calls, no AI model): `python -m
-  normalize.main <input-dir> <output-dir> [--size WxH]`. See `docs/design.md` Component 4.
+  normalize.main <input-dir> <output-dir> [--min-matches N] [--size WxH]`. See
+  `docs/design.md` Component 4.
 
 ## Not implemented yet
 

@@ -2,3 +2,4 @@ requests
 PyYAML
 opencv-python-headless
 numpy
+Pillow

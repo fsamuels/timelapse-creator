@@ -6,12 +6,20 @@ one: it reads a directory of already-taken photos and writes normalized
 frames to an output directory. Nothing here talks to a network or an AI
 model — alignment is classical feature matching (ORB) plus a similarity
 transform (rotation/scale/translation), run entirely locally with OpenCV.
+
+Photos are processed in EXIF capture-time order (not filename order), and
+any photo that doesn't match the reference closely enough (see min_matches
+on estimate_alignment/normalize_sequence) is skipped rather than forced into
+the sequence — so a directory doesn't need to be manually sorted down to
+just the matching photos first.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import ExifTags, Image
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
@@ -21,31 +29,75 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 # a homography would over-fit and risk keystone-distorting the frame.
 IDENTITY_MATRIX = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.float32)
 
+EXIF_DATETIME_FORMAT = "%Y:%m:%d %H:%M:%S"
+
+# estimateAffinePartial2D needs at least a few point pairs to even attempt a
+# fit; this is a floor below RANSAC, not the "does this belong" threshold
+# (min_matches, checked against the RANSAC inlier count below, is).
+MIN_CANDIDATE_MATCHES = 4
+
+
+def capture_time(path):
+    """The photo's EXIF capture time (DateTimeOriginal, falling back to the
+    DateTime tag), or the file's mtime if it has no EXIF data at all.
+    """
+    try:
+        with Image.open(path) as image:
+            exif = image.getexif()
+            exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
+            raw = exif_ifd.get(36867) or exif_ifd.get(36868) or exif.get(306)
+        if raw:
+            return datetime.strptime(raw, EXIF_DATETIME_FORMAT)
+    except Exception:
+        pass
+    return datetime.fromtimestamp(Path(path).stat().st_mtime)
+
 
 def list_images(input_dir):
-    return sorted(p for p in Path(input_dir).iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
+    """Every photo in input_dir, in EXIF capture-time order (not filename
+    order — drone photo filenames aren't necessarily chronological).
+    """
+    paths = [p for p in Path(input_dir).iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS]
+    return sorted(paths, key=capture_time)
 
 
 def estimate_alignment(reference_gray, target_gray, min_matches=10):
     """Estimate the similarity transform mapping target_gray onto
-    reference_gray, or None if too few features can be matched to trust it.
+    reference_gray, and how many feature matches actually agree with it.
+
+    Returns (matrix, inlier_count). matrix is None if target_gray doesn't
+    match reference_gray well enough to trust — either too few candidate
+    matches to attempt a fit, or too few of them agree on one consistent
+    transform (an unrelated photo will produce mostly-inconsistent matches,
+    which RANSAC then discards as outliers). min_matches is checked against
+    that inlier count, not the raw candidate-match count, which is what
+    makes it a real "does this photo belong to this sequence" threshold
+    rather than just a feature-richness check: raise it to be more strict
+    about excluding photos that don't clearly match the reference, lower it
+    to be more lenient.
     """
     orb = cv2.ORB_create(nfeatures=2000)
     ref_kp, ref_desc = orb.detectAndCompute(reference_gray, None)
     tgt_kp, tgt_desc = orb.detectAndCompute(target_gray, None)
     if ref_desc is None or tgt_desc is None:
-        return None
+        return None, 0
 
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
     matches = matcher.knnMatch(tgt_desc, ref_desc, k=2)
     good = [m for m, n in matches if m.distance < 0.75 * n.distance]
-    if len(good) < min_matches:
-        return None
+    if len(good) < MIN_CANDIDATE_MATCHES:
+        return None, 0
 
     src_pts = np.float32([tgt_kp[m.queryIdx].pt for m in good])
     dst_pts = np.float32([ref_kp[m.trainIdx].pt for m in good])
-    matrix, _ = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.RANSAC)
-    return matrix
+    matrix, inlier_mask = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.RANSAC)
+    if matrix is None:
+        return None, 0
+
+    inliers = int(inlier_mask.sum())
+    if inliers < min_matches:
+        return None, inliers
+    return matrix, inliers
 
 
 def warp_to_reference(image, matrix, ref_shape):
@@ -100,6 +152,12 @@ def normalize_sequence(input_dir, output_dir, reference=None, min_matches=10, ou
     them to the region they have in common, and write the results to
     output_dir under their original filenames.
 
+    input_dir can contain unrelated photos mixed in with the ones that
+    belong to this sequence — anything that doesn't match the reference
+    well enough (fewer than min_matches RANSAC-consistent feature matches)
+    is left out of the output and reported in "skipped" instead, so the
+    directory doesn't need to be sorted by hand first.
+
     Returns a report dict: {"aligned": [...], "skipped": [(name, reason)],
     "crop_box": (top, left, bottom, right)}.
     """
@@ -131,9 +189,15 @@ def normalize_sequence(input_dir, output_dir, reference=None, min_matches=10, ou
             matrix = IDENTITY_MATRIX
         else:
             gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-            matrix = estimate_alignment(reference_gray, gray, min_matches=min_matches)
+            matrix, inliers = estimate_alignment(reference_gray, gray, min_matches=min_matches)
             if matrix is None:
-                skipped.append((image_path.name, "not enough matching features"))
+                skipped.append(
+                    (
+                        image_path.name,
+                        f"only {inliers} matching feature(s) agree with the reference "
+                        f"(need {min_matches}) — likely doesn't belong to this sequence",
+                    )
+                )
                 continue
 
         warped, mask = warp_to_reference(image_bgr, matrix, ref_shape)
