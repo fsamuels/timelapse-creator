@@ -116,6 +116,12 @@ commits to the repo. Since commits only happen when a frame actually changes, a 
 stretch of both cams being fully dark (e.g. a deep off-season closure) would eventually
 silently turn the schedule off, needing a manual re-enable.
 
+**Branch protection follow-up:** `main` currently has no GitHub branch protection, so the
+`capture.yml` workflow's direct commits (question 7) are one reason it's been left open —
+locking `main` to "PRs only" today would also block the capture bot. Once GitHub Actions is
+disabled and archived frames are removed from git (question 5's real answer), revisit this
+and add a GitHub ruleset requiring PRs on `main` for everyone, no bypass needed anymore.
+
 ## 8. Next concrete steps
 
 - [ ] Pi Zero W arrives → decide capture hand-off (question 7)
@@ -123,3 +129,5 @@ silently turn the schedule off, needing a manual re-enable.
 - [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed
       before the video builder can be built, not just designed
 - [ ] Decide long-term frame/video storage (question 5)
+- [ ] Once GitHub Actions is disabled and archived frames are removed from git, lock `main`
+      down with a GitHub ruleset requiring PRs for everyone (see question 7 follow-up)
