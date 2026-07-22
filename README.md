@@ -55,6 +55,11 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up
   doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all four cams and
   serving the status page
+- `normalize/` — aligns and crops a directory of not-quite-fixed-position photos (e.g. drone
+  shots) onto a common frame so they cut into a smooth timelapse; a separate, on-demand batch
+  input path from the scheduled webcam capture above. Runs entirely locally (OpenCV feature
+  matching + a similarity transform, no network calls, no AI model): `python -m
+  normalize.main <input-dir> <output-dir> [--size WxH]`. See `docs/design.md` Component 4.
 
 ## Not implemented yet
 
