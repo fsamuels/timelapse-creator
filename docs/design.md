@@ -150,42 +150,79 @@ regenerates the status page after each run via an `ExecStartPost` (see Component
 
 ## Component 2: the video builder
 
-**Not implemented yet.** Design below is the plan, not built code. A CLI that turns a slice
-of the archive into an mp4. Everything it does is a pure function
-of the archive, so it can be re-run with different settings at any time.
+**Implemented** (first pass) in `video/` (`frames.py`, `encode.py`, `main.py`). A CLI that
+turns a directory of frames into an mp4. Everything it does is a pure function of its
+inputs, so it can be re-run with different settings at any time — nothing here mutates the
+archive or normalize output.
 
 ```
-timelapse build --cam summit --from 2026-01-05 --to 2026-02-20 --fps 30 -o jan-feb.mp4
+python -m video.main archive/bluewood/summit -o summit.mp4 --fps 24 --from 2026-01-05 --to 2026-02-20
+python -m video.main normalized/drone-shots -o drone.mp4 --proportional --duration 30
 ```
+
+### Two frame sources, one pipeline
+
+The builder is deliberately source-agnostic: `video/frames.py`'s `load_frames` accepts any
+directory and decides how to recover each frame's real capture timestamp by what it finds:
+
+- If the directory has a `manifest.json` (written by `normalize/align.py`, see Component 4
+  below), timestamps come from there.
+- Otherwise, timestamps are parsed from the archive's own filenames via
+  `capture.archive.parse_frame_time` — this is what makes an `archive/<site>/<cam>/`
+  directory usable directly, no separate export step.
+
+Everything downstream (date-range filtering, dark-frame/duplicate dropping, duration
+computation) works on the same `[(Path, datetime), ...]` list either way.
 
 Pipeline:
 
-1. **Select** frames by cam and date range (filename glob).
-2. **Filter** (each stage optional, controlled by flags):
-   - drop night/dark frames by mean-brightness threshold;
-   - drop any residual near-duplicates;
-   - subsample (e.g. "one frame per day at noon" for a season-long video).
-3. **Annotate** (optional): burn a date/time stamp onto each frame (ffmpeg `drawtext`),
-   so skipped gaps are visible as jumps in the timestamp.
-4. **Encode** with ffmpeg: concat the selected frames at the requested fps into H.264 mp4
-   (libx264, `yuv420p` for universal playback).
+1. **Select**: `load_frames` (by source, above), then `filter_date_range` (`--from`/`--to`,
+   both bounds inclusive).
+2. **Filter** (each stage optional, off by default):
+   - `--drop-dark` / `--dark-threshold`: drop frames below a mean-brightness threshold
+     (PIL grayscale mean) — night frames on an otherwise-lit webcam.
+   - `--dedupe`: drop frames whose bytes exactly match the immediately preceding *kept*
+     frame — residual near-duplicates that slipped past capture-time stale detection (e.g.
+     frames pulled in from more than one source). Exact-hash only, matching
+     `capture/archive.py`'s existing stale check; perceptual near-duplicate detection is
+     still deferred (see Component 1) — add it only if the archive shows it's needed.
+   - Subsampling (e.g. "one frame per day at noon" for a season-long video) is **not
+     implemented** — a natural addition to `frames.py` when a season-long preset is built,
+     not needed for the on-demand case this first pass targets.
+3. **Time** each frame, one of two modes:
+   - **Uniform** (`--fps`, default 24): every frame gets equal screen time, `1/fps` seconds.
+     The right mode for the webcams' fixed 15-minute cadence.
+   - **Proportional** (`--proportional --duration N`): each frame is held for a time
+     proportional to the real time-gap before the next frame, scaled so the (pre-clamp)
+     total matches the requested `--duration`, then clamped to `[--min-hold, --max-hold]`
+     per frame (defaults 0.05s/2.0s). This is for irregularly-spaced batches — a week with
+     4 drone photos reads as 4x more coverage than a week with 1, without one outlier gap
+     (an overnight webcam outage, two weeks between drone flights) swallowing the whole
+     video. Clamping means the actual rendered length is a target, not a guarantee — `video/
+     main.py` logs a warning when clamping pushes the total more than half a second off
+     `--duration`.
+4. **Encode**: `video/encode.py` builds an ffmpeg **concat demuxer** script — one `file` /
+   `duration` pair per frame — rather than a fixed `-r fps`, since that's what makes
+   per-frame variable durations possible in both modes through the same code path. (ffmpeg's
+   concat demuxer has a documented quirk where the *last* `duration` directive is ignored;
+   the workaround, applied here, is to repeat the last frame's `file` line once more with no
+   trailing duration.) Output is H.264 (`libx264`, `yuv420p`) mp4, matching the
+   universal-playback decision below — unchanged from the original design.
 
-Presets built on top of the same machinery:
+**Not yet built** (documented as follow-on, not this pass):
+- Daily-clip / season-video presets on top of the same `frames.py`/`encode.py` machinery.
+- A title/date-range card at the start (`drawtext`) — cheap to add, deferred for scope.
+- Any resolution/downscale controls — output resolution is whatever the input frames
+  already are (webcam frames are fixed-size per cam; drone batches are already resized via
+  `normalize`'s `--size`).
 
-- **Daily clip:** yesterday's daylight frames for one cam at ~24 fps. Can be automated to
-  run each night.
-- **Season video:** all daylight frames (or noon-only frames) from opening day to closing
-  day.
+### How outages appear in the output (decided)
 
-### How outages appear in the output
-
-Three options were discussed (decision pending — see open questions):
-
-| Option | Effect | Cost |
-| --- | --- | --- |
-| Skip gaps silently | Video jumps seamlessly across outages | none — it's the default behavior of frame concat |
-| Timestamp overlay + skip *(leaning toward this)* | Same seamless jump, but the burned-in clock makes outages visible | one `drawtext` filter |
-| Placeholder "power out" cards | Outages become visible events in the video | builder must synthesize card frames from gap detection in the capture log |
+**Decided: skip gaps silently, no overlay.** Frames jump seamlessly across a gap with no
+burned-in timestamp — a deliberate reversal of this doc's earlier lean toward a
+`drawtext` overlay; the overlay idea was set aside as unwanted polish, not because of any
+technical problem with it. A placeholder "power out" card option (synthesizing frames from
+capture-log gaps) remains a documented possibility, not built.
 
 ## Component 3: the web interface
 
@@ -239,7 +276,7 @@ from the fixed webcams: drone photos aren't captured on a schedule by this proje
 an existing batch of images with slightly varying position, angle, and altitude between
 shots, which would make a naive frame-concat timelapse look shaky. Normalization aligns and
 crops a directory of them onto a common frame so they cut together smoothly, before handing
-off to the (not-yet-built) video builder.
+off to the video builder (Component 2).
 
 ```
 python -m normalize.main path/to/drone-photos path/to/normalized --size 1920x1080
@@ -270,6 +307,13 @@ Pipeline, entirely local (OpenCV + Pillow + numpy, no network calls, no AI model
    fully valid — a simple, deterministic way to guarantee no black edges without solving for
    the true largest inscribed rectangle.
 6. **Resize** (optional, `--size`) to a final fixed output size.
+7. **Write a manifest**: `manifest.json` in the output directory, mapping each aligned
+   frame's filename to its EXIF capture timestamp (ISO 8601). This exists because step 4's
+   `cv2.imwrite` silently strips EXIF from the warped/cropped output — without the manifest,
+   every timestamp recovered in step 1 would be lost the moment the frame is written back
+   out. The video builder (Component 2) reads this manifest to recover each frame's real
+   capture time, which its proportional-duration timing mode depends on. Frames
+   `normalize_sequence` skipped (step 2/3) are correctly absent from the manifest.
 
 This is intentionally a standalone preprocessing step rather than folded into
 `capture/archive.py` — it's a different pipeline shape (batch import vs. scheduled capture)

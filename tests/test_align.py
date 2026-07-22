@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 import cv2
@@ -178,7 +179,7 @@ def test_normalize_sequence_writes_uniform_sized_frames_and_reports_skips(tmp_pa
     assert set(result["aligned"]) == {"a_reference.jpg", "b_shifted.jpg"}
     assert [name for name, _ in result["skipped"]] == ["c_blank.jpg"]
 
-    written = {p.name: cv2.imread(str(p)) for p in output_dir.iterdir()}
+    written = {p.name: cv2.imread(str(p)) for p in output_dir.glob("*.jpg")}
     assert set(written) == {"a_reference.jpg", "b_shifted.jpg"}
     assert written["a_reference.jpg"].shape == written["b_shifted.jpg"].shape
 
@@ -197,3 +198,54 @@ def test_normalize_sequence_applies_requested_output_size(tmp_path):
     frame = cv2.imread(str(output_dir / "a_reference.jpg"))
     assert frame.shape[:2] == (80, 100)
     assert result["crop_box"] == (0, 0, reference.shape[0], reference.shape[1])
+
+
+def test_normalize_sequence_writes_manifest_with_capture_timestamps(tmp_path):
+    # cv2.imwrite strips EXIF from the aligned/cropped output, so the
+    # manifest is the only place a downstream video builder can recover each
+    # frame's real capture time (needed for proportional-duration timing).
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    output_dir = tmp_path / "out"
+
+    reference = _textured_image()
+    ref_path = input_dir / "a_reference.jpg"
+    _set_exif_datetime(
+        Image.fromarray(cv2.cvtColor(reference, cv2.COLOR_BGR2RGB)),
+        ref_path,
+        datetime(2026, 1, 1, 8, 0, 0),
+    )
+
+    shift_matrix = np.array([[1, 0, 8], [0, 1, -5]], dtype=np.float32)
+    shifted = cv2.warpAffine(reference, shift_matrix, (reference.shape[1], reference.shape[0]))
+    shifted_path = input_dir / "b_later.jpg"
+    _set_exif_datetime(
+        Image.fromarray(cv2.cvtColor(shifted, cv2.COLOR_BGR2RGB)),
+        shifted_path,
+        datetime(2026, 1, 1, 9, 30, 0),
+    )
+
+    align.normalize_sequence(input_dir, output_dir, min_matches=10)
+
+    manifest = json.loads((output_dir / align.MANIFEST_FILENAME).read_text())
+    assert manifest == {
+        "a_reference.jpg": "2026-01-01T08:00:00",
+        "b_later.jpg": "2026-01-01T09:30:00",
+    }
+
+
+def test_normalize_sequence_manifest_omits_skipped_frames(tmp_path):
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    output_dir = tmp_path / "out"
+
+    reference = _textured_image()
+    cv2.imwrite(str(input_dir / "a_reference.jpg"), reference)
+
+    blank = np.full((400, 400, 3), 128, dtype=np.uint8)
+    cv2.imwrite(str(input_dir / "b_blank.jpg"), blank)
+
+    align.normalize_sequence(input_dir, output_dir, min_matches=10)
+
+    manifest = json.loads((output_dir / align.MANIFEST_FILENAME).read_text())
+    assert set(manifest) == {"a_reference.jpg"}

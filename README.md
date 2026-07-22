@@ -10,7 +10,7 @@ capturing all six cams (the two Bluewood cams, two Seattle dev cams, and two Nor
 cams — the last two Pi-only) on a systemd timer, with a home-network status page live at
 `http://timelapse-pi.local:8080/`. The Bluewood capture path runs in parallel on both
 platforms during the hand-off trial (see `docs/open-questions.md` #1). The video builder
-(turning the archive into an mp4) is not built yet.
+(turning frames into an mp4) now has a first pass built — see `video/` below.
 
 ## The idea
 
@@ -65,12 +65,29 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   (`--min-matches`) is automatically skipped and reported, so unrelated shots mixed into the
   input directory don't need to be sorted out by hand. Runs entirely locally (OpenCV feature
   matching + a similarity transform, no network calls, no AI model): `python -m
-  normalize.main <input-dir> <output-dir> [--min-matches N] [--size WxH]`. See
-  `docs/design.md` Component 4.
+  normalize.main <input-dir> <output-dir> [--min-matches N] [--size WxH]`. Also writes a
+  `manifest.json` (filename → EXIF capture timestamp) alongside the aligned frames, since
+  the alignment/crop step strips EXIF — the video builder below reads it to time
+  drone-photo clips proportionally. See `docs/design.md` Component 4.
+- `video/` — the video builder: turns a directory of frames (a webcam archive cam directory,
+  or a `normalize/` output directory) into an mp4, through the same code path either way —
+  it reads timestamps from a `manifest.json` if present, otherwise parses them from the
+  archive's own filenames. Two timing modes: uniform fps (`--fps`, the default — right for
+  the webcams' fixed 15-minute cadence) or proportional (`--proportional --duration N` —
+  each frame held for a time proportional to the real gap before the next one, capped by
+  `--min-hold`/`--max-hold` so no single gap dominates; right for irregularly-spaced batches
+  like drone photos, where some weeks have several flights and others have one). Optional
+  `--from`/`--to` date filtering, `--drop-dark` (mean-brightness threshold) and `--dedupe`
+  (drop residual exact-duplicate frames) filters. Encodes via ffmpeg's concat demuxer to
+  H.264/`yuv420p` mp4: `python -m video.main <input-dir> -o out.mp4 [--fps N | --proportional
+  --duration N] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--drop-dark] [--dedupe]`. Outage gaps
+  are skipped silently, no timestamp overlay. Daily-clip/season-video presets and a
+  subsampling stage are documented follow-ons, not built. See `docs/design.md` Component 2.
 
 ## Not implemented yet
 
-- The video builder (archive → mp4)
+- Daily-clip / season-video presets and subsampling on top of the video builder — the
+  on-demand CLI (`video/`) is built; these are follow-ons on the same machinery
 - Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
   in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
 - SD card migration (4GB → 64GB) — process is documented
@@ -79,7 +96,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 
 ## Quick summary of decisions so far
 
-- **Language/tools:** Python for the capture job; **ffmpeg** planned for the not-yet-built video builder.
+- **Language/tools:** Python throughout, including the video builder (`video/`), which
+  shells out to **ffmpeg** for the actual encode.
 - **Cadence:** every 15 minutes (decided; see `docs/open-questions.md` #2).
 - **Archive:** raw JPEGs named by cam and a fixed UTC-8 (Pacific, no DST) timestamp; never
   filtered at capture time.
@@ -95,7 +113,12 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   archive's own filenames for the activity graph, plus the persisted capture log for health
   status. Regenerated after each capture run and served under systemd on the Pi, live at
   `http://timelapse-pi.local:8080/` (see `docs/open-questions.md` #8).
+- **Video builder:** a first pass is **built** (`video/`) — an on-demand CLI over either a
+  webcam archive directory or a `normalize/` output directory, with uniform-fps and
+  proportional (time-accurate) duration modes, optional dark-frame/dedupe filters, and an
+  ffmpeg concat-demuxer H.264 encode. Outage gaps are skipped silently, no timestamp overlay
+  (see `docs/open-questions.md` #3/#4).
 
-Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): what the video
-builder's output looks like (season video / daily clips / on-demand CLI), how outages should
-appear in the rendered video, and which bucket provider to use for frame backup.
+Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): daily-clip and
+season-video presets on top of the video builder, and which bucket provider to use for frame
+backup.
