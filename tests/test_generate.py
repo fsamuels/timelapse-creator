@@ -259,6 +259,20 @@ def test_render_html_is_self_contained_and_shows_cams(tmp_path):
     assert "<script" not in doc
 
 
+def test_render_html_defaults_to_dark_theme_with_a_selector(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
+    doc = generate.render_html(data, now, timedelta(hours=1))
+
+    assert '<html lang="en" data-theme="dark">' in doc
+    assert '<option value="dark" selected>Dark</option>' in doc
+    assert '<option value="light">Light</option>' in doc
+    assert '<option value="system">System</option>' in doc
+    assert "localStorage" not in doc  # no persistence, by design
+
+
 def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)

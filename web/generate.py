@@ -235,26 +235,37 @@ def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
 
 # --- rendering -------------------------------------------------------------
 
+_LIGHT_VARS = """
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
+    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
+    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
+"""
+
 _STYLE = f"""
 :root {{
   --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22;
   --border: #30363d; --ok: #3fb950; --stale: #d29922;
   --l0:#161b22; --l1:#0b2c5c; --l2:#15468a; --l3:#2b6cb8; --l4:#4c9aff;
 }}
+:root[data-theme="light"] {{
+{_LIGHT_VARS}}}
 @media (prefers-color-scheme: light) {{
-  :root {{
-    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
-    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
-    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
-  }}
+  :root[data-theme="system"] {{
+{_LIGHT_VARS}  }}
 }}
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
 main {{ max-width: 900px; margin: 0 auto; }}
+.top-row {{ display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; }}
 h1 {{ font-size: 1.5rem; margin: 0 0 .25rem; }}
 h2 {{ font-size: 1.05rem; margin: 2rem 0 .75rem; }}
 .sub {{ color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }}
+.theme-select {{ color: var(--muted); font-size: .85rem; }}
+.theme-select select {{ font: inherit; color: var(--fg); background: var(--card);
+  border: 1px solid var(--border); border-radius: .35rem; padding: .15rem .4rem;
+  margin-left: .35rem; }}
 table {{ border-collapse: collapse; width: 100%; }}
 th, td {{ text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }}
 th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase;
@@ -372,12 +383,18 @@ def render_html(page_data, now, stale_after):
     disk = page_data["disk"]
     parts = [
         "<!doctype html>",
-        '<html lang="en"><head><meta charset="utf-8">',
+        '<html lang="en" data-theme="dark"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<meta http-equiv="refresh" content="900">',  # reload every 15 min
         "<title>timelapse-creator status</title>",
         f"<style>{_STYLE}</style></head><body><main>",
-        "<h1>timelapse-creator status</h1>",
+        '<div class="top-row"><h1>timelapse-creator status</h1>'
+        '<label class="theme-select">Theme '
+        "<select onchange=\"document.documentElement.setAttribute('data-theme', this.value)\">"
+        '<option value="dark" selected>Dark</option>'
+        '<option value="light">Light</option>'
+        '<option value="system">System</option>'
+        "</select></label></div>",
         f'<p class="sub">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M %Z"))} · '
         f'"stale" = no new frame in over {_format_hours(stale_after)} · '
         '<a href="archive/">browse the full archive</a></p>',
