@@ -9,7 +9,7 @@ recommendations. None of these are locked in yet.
 2026-07-16 (free shipping, ETA ~12-18 days) and will likely take over capture once it
 arrives — the hand-off plan itself is decided too, see the new section below.
 
-### The Pi hand-off plan (decided, execution pending Pi arrival)
+### The Pi hand-off plan (in progress — Pi arrived, trial underway)
 
 - **Scheduling:** a systemd timer on the Pi, not cron — better logging (`journalctl`) and
   restart semantics, and it's a natural place to also manage the bucket-sync job and the web
@@ -209,19 +209,21 @@ only written every 15 minutes per cam.
 - [x] Add the persisted capture log (question 9) — `capture/capture_log.py`, wired into
       `capture/main.py` via `capture/config.pi.yaml`'s `capture_log` key
 - [x] Pi systemd scaffolding written as code — `deploy/pi/timelapse-capture.service`,
-      `deploy/pi/timelapse-capture.timer`, and a bring-up doc (`deploy/pi/README.md`). Not
-      yet run anywhere: the Pi hardware hasn't arrived, so this is untested on-device.
-- [ ] Pi Zero W arrives → bring up per "The Pi hand-off plan" (question 1) using the
-      `deploy/pi/` units, smoke-test `capture/main.py --config capture/config.pi.yaml`
-      on-device (watch for missing armv6 wheels — `requests` and `PyYAML` are both small
-      enough to build from source if needed)
-- [ ] Point the Pi config's `archive_dir` at real local disk and confirm it works end-to-end
-      on hardware; migrate existing git-committed Bluewood frames onto it once the Pi also
-      captures Bluewood (question 1, question 5)
+      `deploy/pi/timelapse-capture.timer`, and a bring-up doc (`deploy/pi/README.md`).
+- [x] Pi Zero W arrived and is running: brought up per "The Pi hand-off plan" (question 1)
+      on Raspberry Pi OS Lite via the `deploy/pi/` units, smoke-tested on-device (no armv6
+      wheel-build issues hit in practice), confirmed capturing Seattle cams on the documented
+      15-minute cadence with a real `capture.log`.
+- [x] Bluewood added to `capture/config.pi.yaml` alongside the Seattle cams — this starts the
+      GitHub Actions/Pi trial from question 1: both now capture Bluewood in parallel. Existing
+      git-committed Bluewood frames migrated onto the Pi's local disk at the same
+      `archive/<cam>/YYYY/MM/...` paths (pulled from `main`, which had more history than this
+      working branch).
+- [ ] Watch the trial for ~1-2 weeks (question 1), then disable GitHub Actions' `schedule:`
+      trigger (keep `workflow_dispatch` as an emergency fallback) and stop tracking `archive/`
+      in git
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the
       existing AWS account before deciding; wire up `rclone` sync either way
-- [ ] Keep GitHub Actions running in parallel for the trial period (question 1), then disable
-      the schedule and stop tracking `archive/` in git
 - [ ] Build the static-HTML web interface (question 8) once the capture log exists to read from
 - [ ] Build the video builder (`docs/design.md` Component 2) — currently just a design, no code
 - [ ] Decide output format (question 3) and gap-handling-in-video (question 4) — needed

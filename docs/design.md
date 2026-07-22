@@ -104,18 +104,23 @@ archive/
 
 ### Handing capture off to the Pi
 
-**Decided** (see `docs/open-questions.md` #1) for execution once the Raspberry Pi Zero W
-arrives: a systemd timer runs the same `capture/` code every 15 minutes on the Pi, writing to
-local disk instead of committing to git (see storage below). GitHub Actions keeps running in
-parallel for a ~1-2 week trial to confirm the Pi is reliable, then its schedule is disabled
-(manual `workflow_dispatch` stays available as an emergency fallback). Existing git-committed
-frames get migrated onto the Pi's storage so the archive has one home going forward, and
-`archive/` stops being tracked in git once the trial ends.
+**In progress** (see `docs/open-questions.md` #1): the Raspberry Pi Zero W has arrived and is
+running, via a systemd timer (`deploy/pi/`) that runs the same `capture/` code every 15
+minutes, writing to local disk instead of committing to git (see storage below).
+`capture/config.pi.yaml` now captures all four cams — Seattle (added first, to keep
+developing while Bluewood was dark) and Bluewood (added once the Pi was confirmed reliable,
+starting the trial). GitHub Actions keeps running in parallel on Bluewood for a ~1-2 week
+trial to confirm the Pi is reliable, then its schedule will be disabled (manual
+`workflow_dispatch` stays available as an emergency fallback). Existing git-committed Bluewood
+frames were migrated onto the Pi's local disk at the same `archive/<cam>/YYYY/MM/...` paths
+(pulled from `main`, not this working branch, since Actions' ongoing commits had left the two
+histories out of sync); `archive/` stops being tracked in git once the trial ends.
 
-The systemd units themselves now exist as code under `deploy/pi/`
+The systemd units themselves exist as code under `deploy/pi/`
 (`timelapse-capture.service`, `timelapse-capture.timer`) with a bring-up doc
-(`deploy/pi/README.md`), pointed at `capture/config.pi.yaml`. This is scaffolding only — the
-Pi hardware hasn't arrived yet, so none of it has been smoke-tested on-device.
+(`deploy/pi/README.md`), pointed at `capture/config.pi.yaml`. This has now run on-device,
+confirmed via `journalctl` firing on the documented 15-minute cadence and real frames/log
+entries landing on local disk.
 
 ## Component 2: the video builder
 

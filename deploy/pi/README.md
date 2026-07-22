@@ -64,7 +64,10 @@ schedule.
 
 ## Status
 
-These unit files are code, not yet a confirmed working deployment — the Pi hardware
-hasn't arrived and none of this has had an on-device smoke test yet. Treat paths and
-timing as a starting point to verify once the Pi is in hand (see
-`docs/open-questions.md` #10).
+Confirmed working on-device: the timer fires on the documented 15-minute cadence
+(`systemctl list-timers`), and `capture.main` saves frames and appends `capture.log`
+entries to `/var/lib/timelapse` as expected (see `docs/open-questions.md` #10). Bluewood
+was added to `capture/config.pi.yaml` alongside the Seattle cams once this was confirmed
+reliable, starting the GitHub Actions/Pi trial from `docs/open-questions.md` #1 — existing
+git-committed Bluewood frames were migrated onto this Pi's local disk at matching
+`archive/<cam>/YYYY/MM/...` paths.

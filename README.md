@@ -3,11 +3,13 @@
 Tools for building timelapse videos from the [Ski Bluewood webcams](https://bluewood.com/webcams/)
 (Dayton, WA) — and eventually any public webcam.
 
-**Status: capture pipeline is live.** A GitHub Actions cron job has been fetching frames
-from both cams every 15 minutes since 2026-07-16 and committing them straight to
-`archive/` on `main`. The video builder (turning the archive into an mp4) is not built yet.
-A Raspberry Pi Zero W is in transit (ordered 2026-07-16, ETA ~12-18 days) to eventually take
-over capture from GitHub Actions — see `docs/open-questions.md` for the plan.
+**Status: capture pipeline is live, Pi hand-off trial underway.** A GitHub Actions cron job
+has been fetching frames from both Bluewood cams every 15 minutes since 2026-07-16 and
+committing them straight to `archive/` on `main`. A Raspberry Pi Zero W has since arrived and
+is now also capturing on a systemd timer — Seattle (KING 5) cams first (added while Bluewood
+was off-grid), and Bluewood as of the trial start, running in parallel with GitHub Actions per
+the hand-off plan in `docs/open-questions.md`. The video builder (turning the archive into an
+mp4) is not built yet.
 
 ## The idea
 
@@ -32,8 +34,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 ## What's implemented
 
 - `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by GitHub Actions)
-- `capture/config.pi.yaml` — a second config, for the Pi: two Seattle (KING 5) cams to keep
-  developing the pipeline while Bluewood is off-grid, plus a `capture_log` path
+- `capture/config.pi.yaml` — a second config, for the Pi: two Seattle (KING 5) cams (added to
+  keep developing the pipeline while Bluewood was off-grid) plus Bluewood itself (added once
+  the Pi was confirmed reliable, starting the GitHub Actions/Pi trial), and a `capture_log` path
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
 - `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
@@ -46,9 +49,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 ## Not implemented yet
 
 - The video builder (archive → mp4)
-- Actually running any of this on the Pi hardware — the systemd units exist as code
-  (`deploy/pi/`) but the Pi itself hasn't arrived, so nothing has had an on-device smoke test
-- Long-term storage (frames are living in git as a deliberate short-term stopgap)
+- The bucket sync (`rclone`) and the status/activity web dashboard
+- Long-term storage (frames are living in git as a deliberate short-term stopgap) — this ends
+  once the GitHub Actions/Pi trial concludes and `archive/` stops being tracked in git
 
 ## Quick summary of decisions so far
 
@@ -58,9 +61,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** GitHub Actions now; a Raspberry Pi Zero W is in transit and will take
-  over via a systemd timer, with GitHub Actions running in parallel for a short trial before
-  being disabled (see `docs/open-questions.md` #1).
+- **Capture platform:** GitHub Actions and a Raspberry Pi Zero W (via systemd timer) are both
+  running now, in parallel, for the hand-off trial — GitHub Actions' schedule will be disabled
+  once the trial concludes (see `docs/open-questions.md` #1).
 - **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —
   AWS S3 vs. Backblaze B2 vs. Google Drive, see `docs/open-questions.md` #5).
 - **Web interface:** a status/activity dashboard is planned — home-network-only, a

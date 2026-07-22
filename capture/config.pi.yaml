@@ -1,10 +1,12 @@
 # Pi capture config. Points at local disk paths on the headless Pi (not
 # `archive/` inside the repo, unlike the GitHub Actions stopgap in config.yaml).
 #
-# Cams below are Seattle (KING 5) cams, added to keep developing the pipeline
-# while the off-grid Bluewood cams are down (off-season / generator not running).
-# Bluewood stays on GitHub Actions for now (see capture/config.yaml) and will
-# move into this config once the Pi trial begins — see docs/open-questions.md #1.
+# Columbia/Queen Anne are Seattle (KING 5) cams, added to keep developing the
+# pipeline while the off-grid Bluewood cams are down (off-season / generator
+# not running). Summit/Base are Bluewood, now also captured here -- this is
+# the Pi hand-off trial: GitHub Actions (capture/config.yaml) keeps capturing
+# Bluewood in parallel for ~1-2 weeks so the two sources can be compared
+# before Actions' schedule is disabled — see docs/open-questions.md #1.
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
@@ -16,3 +18,9 @@ cams:
   queenanne:
     type: image
     url: "https://cdn.tegna-media.com/king/weather/queenanne.jpg"
+  summit:
+    type: image
+    url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?"
+  base:
+    type: image
+    url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?"
