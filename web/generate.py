@@ -135,7 +135,14 @@ def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS):
     """
     days_since_sunday = (end_date.weekday() + 1) % 7
     last_week_start = end_date - timedelta(days=days_since_sunday)
-    peak = max(counts.values(), default=0)
+    grid_start = last_week_start - timedelta(weeks=weeks - 1)
+    # Scoped to the days actually shown — counts holds a cam's whole history,
+    # and an old burst day outside this window shouldn't flatten the colors
+    # of the window that's actually rendered.
+    peak = max(
+        (count for day, count in counts.items() if grid_start <= day <= end_date),
+        default=0,
+    )
 
     grid = []
     for w in range(weeks):
@@ -159,7 +166,7 @@ def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS):
 def _level(count, peak):
     if count == 0 or peak == 0:
         return 0
-    return min(4, 1 + int(3 * (count - 1) / peak))
+    return min(4, 1 + int(3 * count / peak))
 
 
 def _human_bytes(n):

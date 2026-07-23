@@ -115,6 +115,28 @@ def test_heatmap_grid_marks_future_cells():
     assert all(c["date"] > end for c in future)
 
 
+def test_heatmap_grid_peak_is_scoped_to_the_displayed_window():
+    # An old burst day well outside the 13-week window shouldn't flatten the
+    # colors of the days actually shown — the window's own busiest day
+    # should still read as the most intense color.
+    end = date(2026, 7, 22)
+    counts = {
+        date(2026, 1, 1): 500,  # ~29 weeks back, outside the window
+        end: 10,
+    }
+
+    grid = generate.heatmap_grid(counts, end, weeks=13)
+
+    end_cell = next(c for week in grid for c in week if c["date"] == end)
+    assert end_cell["level"] == 4
+
+
+def test_level_reaches_max_intensity_at_the_peak_count():
+    assert generate._level(1, 1) == 4
+    assert generate._level(10, 10) == 4
+    assert generate._level(0, 10) == 0
+
+
 def test_frame_bytes_sums_file_sizes(tmp_path):
     frames = [
         _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),
