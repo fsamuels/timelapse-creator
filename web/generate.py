@@ -103,6 +103,29 @@ def ensure_archive_link(www_dir, archive_dir):
     link.symlink_to(archive_dir, target_is_directory=True)
 
 
+def bytes_captured_on(frames, day):
+    """Total size in bytes of frames captured on ``day``."""
+    return frame_bytes([f for f in frames if parse_frame_time(f).date() == day])
+
+
+def daily_burn_rate(bytes_today, now):
+    """Project a full day's disk usage from today's rate so far.
+
+    None once there isn't enough of today elapsed to extrapolate from —
+    dividing by a near-zero elapsed time would spike wildly off a single
+    frame captured right after midnight.
+    """
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed_hours = (now - midnight).total_seconds() / 3600
+    if elapsed_hours < 0.25:
+        return None
+    return {
+        "bytes_today": bytes_today,
+        "elapsed_hours": elapsed_hours,
+        "projected_daily_bytes": bytes_today / elapsed_hours * 24,
+    }
+
+
 def daily_counts(frames):
     """Count frames per capture date (a ``{date: int}`` mapping)."""
     counts = {}
@@ -213,7 +236,8 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
     with ``url`` and ``interval_minutes``), used to link each cam's name to
     its live image and to size its stale threshold.
 
-    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None}``.
+    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None,
+    "burn_rate": {"bytes_today", "elapsed_hours", "projected_daily_bytes"} or None}``.
     """
     archive_dir = Path(archive_dir)
     sites = scan_archive(archive_dir)
@@ -222,10 +246,12 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
     today = now.date()
 
     site_views = []
+    bytes_today = 0
     for site, cams in sites.items():
         cam_views = []
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
+            bytes_today += bytes_captured_on(frames, today)
             cam_views.append(
                 {
                     "name": cam,
@@ -237,7 +263,11 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
                 }
             )
         site_views.append({"site": site, "cams": cam_views})
-    return {"sites": site_views, "disk": disk_usage(archive_dir)}
+    return {
+        "sites": site_views,
+        "disk": disk_usage(archive_dir),
+        "burn_rate": daily_burn_rate(bytes_today, now) if site_views else None,
+    }
 
 
 # --- rendering -------------------------------------------------------------
@@ -305,6 +335,7 @@ th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: u
 .legend {{ display: flex; align-items: center; gap: 4px; color: var(--muted);
   font-size: .78rem; margin-top: .5rem; }}
 .legend .day {{ display: inline-block; }}
+.hm-info {{ min-height: 1.2em; font-size: .8rem; color: var(--muted); margin-top: .35rem; }}
 footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
   border-top: 1px solid var(--border); padding-top: 1rem; }}
 """
@@ -380,14 +411,25 @@ def _heatmap_html(grid):
             cell = week[row]
             if cell["future"]:
                 cls = "day future"
-                title = ""
+                attrs = ""
             else:
                 n = cell["count"]
-                title = f' title="{n} image{"s" if n != 1 else ""} on {cell["date"].isoformat()}"'
+                info = f'{n} image{"s" if n != 1 else ""} on {cell["date"].isoformat()}'
+                # `title` alone needs a mouse hover, which touch screens have no way to
+                # trigger, so a tap (fires "click" on touch too) copies the same text
+                # into the visible .hm-info line below the grid.
+                attrs = (
+                    f' title="{info}" '
+                    f"onclick=\"this.closest('.heatmap').querySelector('.hm-info')"
+                    f'.textContent=this.title"'
+                )
                 cls = f"day l{cell['level']}"
-            cells.append(f'<div class="{cls}"{title}></div>')
+            cells.append(f'<div class="{cls}"{attrs}></div>')
 
-    return '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div></div>"
+    return (
+        '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div>"
+        '<div class="hm-info muted">Tap a day for details</div></div>'
+    )
 
 
 def render_html(page_data, now):
@@ -417,6 +459,16 @@ def render_html(page_data, now):
             f'{html.escape(_human_bytes(disk["total"]))} '
             f'({html.escape(_human_bytes(disk["used"]))} used)</p>'
         )
+    burn = page_data.get("burn_rate")
+    if burn:
+        hours = burn["elapsed_hours"]
+        projected = html.escape(_human_bytes(burn["projected_daily_bytes"]))
+        so_far = html.escape(_human_bytes(burn["bytes_today"]))
+        parts.append(
+            f'<p class="sub">Burn rate: {projected}/day projected from today\'s rate '
+            f'({so_far} captured in the first {hours:.1f} hr{"" if hours == 1 else "s"} '
+            f"of today)</p>"
+        )
 
     if not sites:
         parts.append('<p class="muted">No frames archived yet.</p>')
@@ -436,9 +488,11 @@ def render_html(page_data, now):
             parts.append('<div class="cam-row">')
             parts.append(_heatmap_html(cam["grid"]))
             if cam.get("thumb_url"):
+                thumb_url = html.escape(cam["thumb_url"])
                 parts.append(
-                    f'<img class="cam-thumb" src="{html.escape(cam["thumb_url"])}" '
-                    f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy">'
+                    f'<a href="{thumb_url}" target="_blank" rel="noopener">'
+                    f'<img class="cam-thumb" src="{thumb_url}" '
+                    f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy"></a>'
                 )
             parts.append("</div>")
             parts.append("</div>")
