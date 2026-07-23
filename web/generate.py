@@ -305,6 +305,7 @@ th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: u
 .legend {{ display: flex; align-items: center; gap: 4px; color: var(--muted);
   font-size: .78rem; margin-top: .5rem; }}
 .legend .day {{ display: inline-block; }}
+.hm-info {{ min-height: 1.2em; font-size: .8rem; color: var(--muted); margin-top: .35rem; }}
 footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
   border-top: 1px solid var(--border); padding-top: 1rem; }}
 """
@@ -380,14 +381,25 @@ def _heatmap_html(grid):
             cell = week[row]
             if cell["future"]:
                 cls = "day future"
-                title = ""
+                attrs = ""
             else:
                 n = cell["count"]
-                title = f' title="{n} image{"s" if n != 1 else ""} on {cell["date"].isoformat()}"'
+                info = f'{n} image{"s" if n != 1 else ""} on {cell["date"].isoformat()}'
+                # `title` alone needs a mouse hover, which touch screens have no way to
+                # trigger, so a tap (fires "click" on touch too) copies the same text
+                # into the visible .hm-info line below the grid.
+                attrs = (
+                    f' title="{info}" '
+                    f"onclick=\"this.closest('.heatmap').querySelector('.hm-info')"
+                    f'.textContent=this.title"'
+                )
                 cls = f"day l{cell['level']}"
-            cells.append(f'<div class="{cls}"{title}></div>')
+            cells.append(f'<div class="{cls}"{attrs}></div>')
 
-    return '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div></div>"
+    return (
+        '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div>"
+        '<div class="hm-info muted">Tap a day for details</div></div>'
+    )
 
 
 def render_html(page_data, now):
@@ -436,9 +448,11 @@ def render_html(page_data, now):
             parts.append('<div class="cam-row">')
             parts.append(_heatmap_html(cam["grid"]))
             if cam.get("thumb_url"):
+                thumb_url = html.escape(cam["thumb_url"])
                 parts.append(
-                    f'<img class="cam-thumb" src="{html.escape(cam["thumb_url"])}" '
-                    f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy">'
+                    f'<a href="{thumb_url}" target="_blank" rel="noopener">'
+                    f'<img class="cam-thumb" src="{thumb_url}" '
+                    f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy"></a>'
                 )
             parts.append("</div>")
             parts.append("</div>")

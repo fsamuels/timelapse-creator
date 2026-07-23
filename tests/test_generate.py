@@ -345,6 +345,17 @@ def test_render_html_shows_a_thumbnail_of_the_newest_frame(tmp_path):
     ) in doc
 
 
+def test_render_html_thumbnail_links_to_the_full_size_frame(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    thumb_url = "archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"
+    assert f'<a href="{thumb_url}" target="_blank" rel="noopener"><img class="cam-thumb"' in doc
+
+
 def test_heatmap_tooltip_leads_with_the_image_count(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800")
@@ -354,6 +365,20 @@ def test_heatmap_tooltip_leads_with_the_image_count(tmp_path):
     doc = generate.render_html(data, now)
 
     assert 'title="2 images on 2026-07-16"' in doc
+
+
+def test_heatmap_day_tap_copies_tooltip_text_into_a_visible_line(tmp_path):
+    """Mobile can't hover a `title` tooltip, so tapping a day (which fires a
+    "click" on touch too) must copy the same text into a visible .hm-info line."""
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert '<div class="hm-info muted">Tap a day for details</div>' in doc
+    assert "onclick=\"this.closest('.heatmap').querySelector('.hm-info')" in doc
+    assert '.textContent=this.title"' in doc
 
 
 def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
