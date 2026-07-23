@@ -4,11 +4,12 @@ Working rules for this repo — for Claude Code sessions and human contributors 
 
 ## Project in one paragraph
 
-`timelapse-creator` captures frames from two off-grid Ski Bluewood webcams every 15 minutes
-and will eventually build timelapse videos from the archive. See `README.md` for current
-status, `docs/design.md` for architecture, and `docs/open-questions.md` for decisions still
-open. Core principle: **archive everything raw, filter at build time** — never drop a frame
-at capture time because it might not be needed later.
+`timelapse-creator` captures frames every 15 minutes from off-grid webcams (starting with two
+Ski Bluewood cams, now six across three sites) on a Raspberry Pi, and will eventually build
+timelapse videos from the archive. See `README.md` for current status, `docs/design.md` for
+architecture, and `docs/open-questions.md` for decisions still open. Core principle:
+**archive everything raw, filter at build time** — never drop a frame at capture time because
+it might not be needed later.
 
 ## Branching
 
@@ -40,16 +41,19 @@ matching the branch prefix — `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, 
 
 ## Pull requests are required
 
-All code changes land on `main` through a PR — no direct pushes. Before opening one:
+All code changes land on `main` through a PR — no direct pushes. This is enforced by GitHub
+branch protection on `main` (PRs required for everyone, no admin bypass, `lint-and-test`
+must pass, force-pushes/deletion disabled), not just a convention. Before opening one:
 
 - `ruff check .` and `black --check .` are clean
 - `pytest` passes
 - the PR uses `.github/pull_request_template.md` and describes *why*, not just *what*
 
-**One exception:** `.github/workflows/capture.yml` commits frames straight to `main` every
-15 minutes (`git add archive && git commit && git push`). That's a data-only automated job,
-not a code change — it stays outside the PR requirement. Don't try to route it through PRs
-and don't be surprised by `capture-bot` commits in `git log`.
+No more exceptions: `.github/workflows/capture.yml` no longer runs on a schedule or commits
+to `main` — capture now runs on the Pi (see `docs/open-questions.md` #1), and `archive/`
+isn't tracked in git anymore. `capture.yml` is `workflow_dispatch`-only, an emergency-capture
+fallback that has nothing to commit (`archive/` is gitignored). Don't be surprised by
+historical `capture-bot` commits in `git log` from before this change.
 
 ## Code style
 
