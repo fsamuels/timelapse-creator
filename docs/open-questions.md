@@ -5,18 +5,19 @@ recommendations. None of these are locked in yet.
 
 ## 1. Where does the capture job run? (decided)
 
-**Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now deployed and captures all six
-cams every 15 minutes via a systemd timer. GitHub Actions cron still runs in parallel,
-capturing Bluewood, during the hand-off trial (see below). The Pi was ordered 2026-07-16.
+**Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now the sole capture platform,
+capturing all six cams every 15 minutes via a systemd timer. The Pi was ordered
+2026-07-16.
 
-### The Pi hand-off plan (decided; trial in progress)
+### The Pi hand-off plan (decided; complete)
 
-**Trial status:** the Pi (`timelapse-pi`) is deployed and live — running the systemd capture
-timer against `capture/config.pi.yaml` (all six cams) and serving the status page at
-`http://timelapse-pi.local:8080/`. GitHub Actions continues capturing Bluewood via
-`capture/config.yaml` in parallel during the comparison window. Still to do before the trial
-ends: migrate the git-committed Bluewood frames onto the Pi, disable the Actions schedule,
-and stop tracking `archive/` in git.
+**Status:** the hand-off trial is over. The Pi (`timelapse-pi`) is deployed and live —
+running the systemd capture timer against `capture/config.pi.yaml` (all six cams) and
+serving the status page at `http://timelapse-pi.local:8080/`. The git-committed Bluewood
+frames have been migrated onto the Pi's local archive, `capture.yml`'s `schedule:` trigger
+has been removed (`workflow_dispatch` stays as a manual emergency-capture fallback), and
+`archive/` is no longer tracked in git (added to `.gitignore`; the historical commits stay
+in git history, no rewrite done).
 
 - **Scheduling:** a systemd timer on the Pi, not cron — better logging (`journalctl`) and
   restart semantics, and it's a natural place to also manage the bucket-sync job and the web
@@ -186,11 +187,11 @@ stretch of both cams being fully dark (e.g. a deep off-season closure) would eve
 silently turn the schedule off, needing a manual re-enable. Relevant again during the trial
 period in question 1, less so afterward once the schedule is disabled deliberately.
 
-**Branch protection follow-up:** `main` currently has no GitHub branch protection, so the
-`capture.yml` workflow's direct commits are one reason it's been left open — locking `main`
-to "PRs only" today would also block the capture bot. Once GitHub Actions is disabled and
-archived frames are removed from git (question 5's real answer), revisit this and add a
-GitHub ruleset requiring PRs on `main` for everyone, no bypass needed anymore.
+**Branch protection follow-up:** `main` currently has no GitHub branch protection. That was
+left open partly because `capture.yml`'s direct commits would otherwise be blocked by a
+"PRs only" rule — now that GitHub Actions capture is disabled and `archive/` is no longer
+tracked in git, that blocker is gone, and adding a GitHub ruleset requiring PRs on `main`
+for everyone (no bypass needed) is a clean follow-up (see question 12).
 
 ## 8. The web interface (implemented)
 
@@ -338,12 +339,12 @@ than relying on the estimate above.
 - [x] Add the two North Carolina cams (question 10) — `capture/config.pi.yaml`, Pi-only
 - [ ] Execute the SD card migration (question 11) — runbook is written
       (`docs/sd-card-migration.md`), migration itself not yet done
-- [ ] Migrate the existing git-committed Bluewood frames onto the Pi's storage so the archive
+- [x] Migrate the existing git-committed Bluewood frames onto the Pi's storage so the archive
       has one home (question 1, question 5)
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the
       existing AWS account before deciding; wire up `rclone` sync either way
-- [ ] Keep GitHub Actions running in parallel for the trial period (question 1), then disable
-      the schedule and stop tracking `archive/` in git
+- [x] Disable the GitHub Actions capture schedule and stop tracking `archive/` in git
+      (question 1) — `workflow_dispatch` kept as a manual emergency-capture fallback
 - [x] Build and deploy the static-HTML web interface (question 8) — `web/generate.py`
       (health/status + per-cam activity heatmap), regenerated via the capture service's
       `ExecStartPost` and served by `deploy/pi/timelapse-web.service`; live on the Pi at
@@ -361,5 +362,6 @@ than relying on the estimate above.
       season presets and a subsampling stage remain follow-ons.
 - [x] Decide output format (question 3) and gap-handling-in-video (question 4) — on-demand
       CLI is the core (presets deferred); gaps are skipped silently, no timestamp overlay.
-- [ ] Once GitHub Actions is disabled and archived frames are removed from git, lock `main`
-      down with a GitHub ruleset requiring PRs for everyone (see question 7 follow-up)
+- [ ] Now that GitHub Actions is disabled and archived frames are removed from git, lock
+      `main` down with a GitHub ruleset requiring PRs for everyone (see question 7
+      follow-up) — a repo-settings change, not done as part of this cleanup

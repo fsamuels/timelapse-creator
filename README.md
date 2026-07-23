@@ -3,14 +3,14 @@
 Tools for building timelapse videos from the [Ski Bluewood webcams](https://bluewood.com/webcams/)
 (Dayton, WA) — and eventually any public webcam.
 
-**Status: capture pipeline is live on two platforms.** A GitHub Actions cron job has been
-fetching the two Bluewood cams every 15 minutes since 2026-07-16 and committing them to
-`archive/` on `main`. A Raspberry Pi Zero W (hostname `timelapse-pi`) is now deployed and
-capturing all six cams (the two Bluewood cams, two Seattle dev cams, and two North Carolina
-cams — the last two Pi-only) on a systemd timer, with a home-network status page live at
-`http://timelapse-pi.local:8080/`. The Bluewood capture path runs in parallel on both
-platforms during the hand-off trial (see `docs/open-questions.md` #1). The video builder
-(turning frames into an mp4) now has a first pass built — see `video/` below.
+**Status: capture pipeline is live on the Pi.** A Raspberry Pi Zero W (hostname
+`timelapse-pi`) is deployed and capturing all six cams (the two Bluewood cams, two Seattle
+dev cams, and two North Carolina cams) on a systemd timer, with a home-network status page
+live at `http://timelapse-pi.local:8080/`. GitHub Actions no longer captures on a schedule —
+the earlier Bluewood-only cron job has been retired now that the Pi hand-off trial is
+complete (see `docs/open-questions.md` #1); `workflow_dispatch` remains as a manual
+emergency-capture fallback. The video builder (turning frames into an mp4) now has a first
+pass built — see `video/` below.
 
 ## The idea
 
@@ -38,7 +38,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 
 ## What's implemented
 
-- `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by GitHub Actions)
+- `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by the
+  `workflow_dispatch` manual emergency-capture fallback in GitHub Actions; not on a schedule
+  anymore)
 - `capture/config.pi.yaml` — the Pi's config: all six cams (two Seattle KING 5 cams, added
   to keep developing the pipeline while Bluewood was off-grid; the two Bluewood cams for
   the hand-off trial; and two North Carolina cams — WLOS-hosted PNG snapshots of the UNCA
@@ -57,7 +59,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   frame, + a Dark/Light/System theme picker defaulting to dark) from the archive filenames
   and the capture log; also symlinks the raw archive in next to the page so it's directly
   browsable
-- `.github/workflows/capture.yml` — runs `capture/main.py` with no args every 15 minutes, commits new Bluewood frames to `archive/`
+- `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
+  sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
+  fallback
 - `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up
   doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all four cams and
   serving the status page
@@ -106,9 +110,10 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) now captures all six cams via
-  a systemd timer; GitHub Actions still captures Bluewood in parallel during the hand-off
-  trial, to be disabled once the Pi proves reliable (see `docs/open-questions.md` #1).
+- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) captures all six cams via a
+  systemd timer — the sole scheduled capture platform now that the hand-off trial is
+  complete (see `docs/open-questions.md` #1). GitHub Actions' schedule is disabled;
+  `workflow_dispatch` remains as a manual emergency-capture fallback.
 - **Frame storage:** local disk on the Pi, synced to a cloud bucket (provider still open —
   AWS S3 vs. Backblaze B2 vs. Google Drive, see `docs/open-questions.md` #5).
 - **Web interface:** a status/activity dashboard is **built and deployed** (`web/generate.py`)
