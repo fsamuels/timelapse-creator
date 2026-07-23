@@ -103,6 +103,29 @@ def ensure_archive_link(www_dir, archive_dir):
     link.symlink_to(archive_dir, target_is_directory=True)
 
 
+def bytes_captured_on(frames, day):
+    """Total size in bytes of frames captured on ``day``."""
+    return frame_bytes([f for f in frames if parse_frame_time(f).date() == day])
+
+
+def daily_burn_rate(bytes_today, now):
+    """Project a full day's disk usage from today's rate so far.
+
+    None once there isn't enough of today elapsed to extrapolate from —
+    dividing by a near-zero elapsed time would spike wildly off a single
+    frame captured right after midnight.
+    """
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed_hours = (now - midnight).total_seconds() / 3600
+    if elapsed_hours < 0.25:
+        return None
+    return {
+        "bytes_today": bytes_today,
+        "elapsed_hours": elapsed_hours,
+        "projected_daily_bytes": bytes_today / elapsed_hours * 24,
+    }
+
+
 def daily_counts(frames):
     """Count frames per capture date (a ``{date: int}`` mapping)."""
     counts = {}
@@ -213,7 +236,8 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
     with ``url`` and ``interval_minutes``), used to link each cam's name to
     its live image and to size its stale threshold.
 
-    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None}``.
+    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None,
+    "burn_rate": {"bytes_today", "elapsed_hours", "projected_daily_bytes"} or None}``.
     """
     archive_dir = Path(archive_dir)
     sites = scan_archive(archive_dir)
@@ -222,10 +246,12 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
     today = now.date()
 
     site_views = []
+    bytes_today = 0
     for site, cams in sites.items():
         cam_views = []
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
+            bytes_today += bytes_captured_on(frames, today)
             cam_views.append(
                 {
                     "name": cam,
@@ -237,7 +263,11 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
                 }
             )
         site_views.append({"site": site, "cams": cam_views})
-    return {"sites": site_views, "disk": disk_usage(archive_dir)}
+    return {
+        "sites": site_views,
+        "disk": disk_usage(archive_dir),
+        "burn_rate": daily_burn_rate(bytes_today, now) if site_views else None,
+    }
 
 
 # --- rendering -------------------------------------------------------------
@@ -428,6 +458,16 @@ def render_html(page_data, now):
             f'<p class="sub">Disk: {html.escape(_human_bytes(disk["free"]))} free of '
             f'{html.escape(_human_bytes(disk["total"]))} '
             f'({html.escape(_human_bytes(disk["used"]))} used)</p>'
+        )
+    burn = page_data.get("burn_rate")
+    if burn:
+        hours = burn["elapsed_hours"]
+        projected = html.escape(_human_bytes(burn["projected_daily_bytes"]))
+        so_far = html.escape(_human_bytes(burn["bytes_today"]))
+        parts.append(
+            f'<p class="sub">Burn rate: {projected}/day projected from today\'s rate '
+            f'({so_far} captured in the first {hours:.1f} hr{"" if hours == 1 else "s"} '
+            f"of today)</p>"
         )
 
     if not sites:

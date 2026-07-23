@@ -146,6 +146,31 @@ def test_frame_bytes_sums_file_sizes(tmp_path):
     assert generate.frame_bytes(frames) == 5
 
 
+def test_bytes_captured_on_filters_by_date(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),
+        _write_frame(tmp_path, "s", "c", "2026-07-15T12-00-00-000000-0800", data=b"defg"),
+    ]
+
+    assert generate.bytes_captured_on(frames, date(2026, 7, 16)) == 3
+
+
+def test_daily_burn_rate_projects_a_full_day_from_the_rate_so_far():
+    now = datetime(2026, 7, 16, 6, 0, tzinfo=PACIFIC)  # 6 hrs into the day
+
+    rate = generate.daily_burn_rate(bytes_today=1024, now=now)
+
+    assert rate["bytes_today"] == 1024
+    assert rate["elapsed_hours"] == 6
+    assert rate["projected_daily_bytes"] == 1024 / 6 * 24
+
+
+def test_daily_burn_rate_none_too_early_in_the_day():
+    now = datetime(2026, 7, 16, 0, 5, tzinfo=PACIFIC)  # 5 min into the day
+
+    assert generate.daily_burn_rate(bytes_today=100, now=now) is None
+
+
 def test_thumb_url_points_at_newest_frame_under_the_archive_link(tmp_path):
     frames = [
         _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800"),
@@ -260,6 +285,27 @@ def test_build_page_data_orphaned_cam_is_stale_without_crashing(tmp_path):
     summit = data["sites"][0]["cams"][0]
     assert summit["url"] is None
     assert summit["health"]["is_stale"] is True
+
+
+def test_build_page_data_computes_burn_rate_from_todays_frames(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T03-00-00-000000-0800", data=b"x" * 100)
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-15T03-00-00-000000-0800", data=b"x" * 900)
+    now = datetime(2026, 7, 16, 9, 0, tzinfo=PACIFIC)  # 9 hrs into the day
+
+    data = generate.build_page_data(tmp_path, None, now)
+
+    burn = data["burn_rate"]
+    assert burn["bytes_today"] == 100
+    assert burn["elapsed_hours"] == 9
+    assert burn["projected_daily_bytes"] == 100 / 9 * 24
+
+
+def test_build_page_data_burn_rate_none_without_any_frames(tmp_path):
+    now = datetime(2026, 7, 16, 9, 0, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+
+    assert data["burn_rate"] is None
 
 
 def test_render_html_links_cam_name_to_its_url(tmp_path):
@@ -391,6 +437,29 @@ def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
     assert '<a href="archive/">browse the full archive</a>' in doc
     assert "free of" in doc
     assert "<th>Disk</th>" in doc
+
+
+def test_render_html_shows_burn_rate(tmp_path):
+    _write_frame(
+        tmp_path, "bluewood", "summit", "2026-07-16T03-00-00-000000-0800", data=b"x" * 1024
+    )
+    now = datetime(2026, 7, 16, 9, 0, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert "Burn rate:" in doc
+    assert "projected from today's rate" in doc
+
+
+def test_render_html_omits_burn_rate_when_too_early_in_the_day(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-15T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 0, 5, tzinfo=PACIFIC)  # 5 min into today
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert "Burn rate:" not in doc
 
 
 def test_build_page_data_pairs_health_with_log(tmp_path):
