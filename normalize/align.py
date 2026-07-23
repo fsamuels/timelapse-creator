@@ -65,9 +65,14 @@ def capture_time(path):
 def list_images(input_dir):
     """Every photo in input_dir, in EXIF capture-time order (not filename
     order — drone photo filenames aren't necessarily chronological).
+
+    Ties in capture_time (identical EXIF timestamps, or several no-EXIF
+    photos copied in the same batch with equal mtimes) break by filename, so
+    the order is deterministic across runs and platforms rather than
+    depending on directory-iteration order.
     """
     paths = [p for p in Path(input_dir).iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS]
-    return sorted(paths, key=capture_time)
+    return sorted(paths, key=lambda p: (capture_time(p), p.name))
 
 
 def estimate_alignment(reference_gray, target_gray, min_matches=10):
@@ -88,7 +93,11 @@ def estimate_alignment(reference_gray, target_gray, min_matches=10):
     orb = cv2.ORB_create(nfeatures=2000)
     ref_kp, ref_desc = orb.detectAndCompute(reference_gray, None)
     tgt_kp, tgt_desc = orb.detectAndCompute(target_gray, None)
-    if ref_desc is None or tgt_desc is None:
+    # knnMatch(k=2) returns at most `len(ref_desc)` neighbors per query — if
+    # the reference has only one descriptor, every match comes back with a
+    # single neighbor instead of two, and the unpacking below would raise.
+    # A single-descriptor reference can't produce a trustworthy match anyway.
+    if ref_desc is None or tgt_desc is None or len(ref_desc) < 2:
         return None, 0
 
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)

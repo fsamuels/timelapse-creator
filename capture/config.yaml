@@ -5,7 +5,9 @@ cams:
     site: bluewood  # frames land under archive/<site>/<cam>/...
     type: image  # image | stream
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?"
+    interval_minutes: 15
   base:
     site: bluewood
     type: image
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?"
+    interval_minutes: 15

@@ -68,6 +68,34 @@ def test_estimate_alignment_recovers_translation():
     assert matrix[1, 2] == pytest.approx(10, abs=2)
 
 
+def test_estimate_alignment_handles_single_descriptor_reference(monkeypatch):
+    """Regression test: cv2's knnMatch(k=2) only returns as many neighbors per
+    query as the reference (train) set has descriptors. A reference with
+    exactly one descriptor makes every match a 1-tuple, and unpacking
+    `for m, n in matches` raises ValueError instead of estimate_alignment
+    reporting "no match" like it does for any other unmatchable pair.
+    """
+
+    class FakeORB:
+        def __init__(self):
+            self.calls = 0
+
+        def detectAndCompute(self, image, mask):
+            self.calls += 1
+            if self.calls == 1:  # reference image: exactly one descriptor
+                return [cv2.KeyPoint(0, 0, 1)], np.zeros((1, 32), dtype=np.uint8)
+            return [cv2.KeyPoint(0, 0, 1)] * 5, np.zeros((5, 32), dtype=np.uint8)
+
+    monkeypatch.setattr(align.cv2, "ORB_create", lambda nfeatures=2000: FakeORB())
+
+    matrix, inliers = align.estimate_alignment(
+        np.zeros((10, 10), dtype=np.uint8), np.zeros((10, 10), dtype=np.uint8)
+    )
+
+    assert matrix is None
+    assert inliers == 0
+
+
 def test_estimate_alignment_rejects_match_below_min_matches_threshold():
     reference = _textured_image()
     reference_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
@@ -127,6 +155,17 @@ def test_list_images_orders_by_exif_time_not_filename(tmp_path):
     ordered = [p.name for p in align.list_images(tmp_path)]
 
     assert ordered == ["z_first.jpg", "a_second.jpg", "m_third.jpg"]
+
+
+def test_list_images_breaks_capture_time_ties_by_filename(tmp_path):
+    # Both photos share the same EXIF timestamp — order must be deterministic
+    # (by filename), not whatever order Path.iterdir() happens to yield.
+    _write_jpeg_with_exif_datetime(tmp_path / "b_second.jpg", datetime(2026, 1, 1, 8, 0, 0))
+    _write_jpeg_with_exif_datetime(tmp_path / "a_first.jpg", datetime(2026, 1, 1, 8, 0, 0))
+
+    ordered = [p.name for p in align.list_images(tmp_path)]
+
+    assert ordered == ["a_first.jpg", "b_second.jpg"]
 
 
 def test_normalize_sequence_processes_frames_in_exif_order(tmp_path):
