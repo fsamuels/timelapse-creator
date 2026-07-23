@@ -21,7 +21,6 @@ frames) with no source-era filtering logic of its own.
 
 import argparse
 import html
-import json
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,10 +28,12 @@ from pathlib import Path
 import yaml
 
 from capture.archive import PACIFIC, parse_frame_time
+from capture.capture_log import latest_outcomes, read_capture_log
 
 CONFIG_PATH = Path(__file__).parent.parent / "capture" / "config.yaml"
 DEFAULT_OUTPUT = "site/index.html"
 HEATMAP_WEEKS = 13  # ~a quarter, the recent-activity window shown per cam
+STALE_MULTIPLIER = 2  # flag a cam stale after this many missed capture intervals
 
 
 def scan_archive(archive_dir):
@@ -100,35 +101,6 @@ def ensure_archive_link(www_dir, archive_dir):
     elif link.exists():
         return
     link.symlink_to(archive_dir, target_is_directory=True)
-
-
-def read_capture_log(log_path):
-    """Parse the JSONL capture log into a list of entries; [] if missing."""
-    if not log_path:
-        return []
-    log_path = Path(log_path)
-    if not log_path.is_file():
-        return []
-    entries = []
-    for line in log_path.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue  # tolerate a partially written trailing line
-    return entries
-
-
-def latest_outcomes(entries):
-    """Map each cam to its most recent log entry (the log is append-only)."""
-    latest = {}
-    for entry in entries:
-        cam = entry.get("cam")
-        if cam is not None:
-            latest[cam] = entry
-    return latest
 
 
 def daily_counts(frames):
@@ -212,11 +184,27 @@ def _human_ago(delta):
     return f"{hours // 24} days ago"
 
 
-def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
+def stale_after_for(cam_cfg):
+    """How long a cam can go without a new frame before it's flagged stale.
+
+    ``cam_cfg`` is None for a cam with no entry in the current config (e.g. a
+    decommissioned camera whose archived frames are still on disk) — treated
+    as unmanaged, so it always reads as stale rather than guessing an interval
+    for it. A cam that *is* configured must declare its own
+    ``interval_minutes``; there's no code-side default to drift out of sync
+    with the actual capture schedule.
+    """
+    if cam_cfg is None:
+        return timedelta(0)
+    return timedelta(minutes=STALE_MULTIPLIER * cam_cfg["interval_minutes"])
+
+
+def build_page_data(archive_dir, log_path, now, cam_config=None):
     """Gather everything the template needs from the archive and the log.
 
     ``cam_config`` is the capture config's ``cams`` mapping (cam name -> dict
-    with a ``url`` key), used to link each cam's name to its live image.
+    with ``url`` and ``interval_minutes``), used to link each cam's name to
+    its live image and to size its stale threshold.
 
     Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None}``.
     """
@@ -230,11 +218,12 @@ def build_page_data(archive_dir, log_path, now, stale_after, cam_config=None):
     for site, cams in sites.items():
         cam_views = []
         for cam, frames in cams.items():
+            cam_cfg = cam_config.get(cam)
             cam_views.append(
                 {
                     "name": cam,
-                    "url": cam_config.get(cam, {}).get("url"),
-                    "health": cam_health(frames, outcomes.get(cam), now, stale_after),
+                    "url": (cam_cfg or {}).get("url"),
+                    "health": cam_health(frames, outcomes.get(cam), now, stale_after_for(cam_cfg)),
                     "grid": heatmap_grid(daily_counts(frames), today),
                     "bytes": frame_bytes(frames),
                     "thumb_url": thumb_url(frames, archive_dir),
@@ -394,7 +383,7 @@ def _heatmap_html(grid):
     return '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div></div>"
 
 
-def render_html(page_data, now, stale_after):
+def render_html(page_data, now):
     sites = page_data["sites"]
     disk = page_data["disk"]
     parts = [
@@ -412,7 +401,7 @@ def render_html(page_data, now, stale_after):
         '<option value="system">System</option>'
         "</select></label></div>",
         f'<p class="sub">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M %Z"))} · '
-        f'"stale" = no new frame in over {_format_hours(stale_after)} · '
+        f'"stale" = no new frame in over {STALE_MULTIPLIER}× a cam\'s normal interval · '
         '<a href="archive/">browse the full archive</a></p>',
     ]
     if disk:
@@ -463,13 +452,6 @@ def _legend_html():
     return f'<div class="legend"><span>Less</span>{cells}<span>More</span></div>'
 
 
-def _format_hours(delta):
-    hours = delta.total_seconds() / 3600
-    if hours == int(hours):
-        hours = int(hours)
-    return f"{hours} hr"
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate the static status page.")
     parser.add_argument(
@@ -484,12 +466,6 @@ def parse_args():
         default=None,
         help=f"Output HTML path (default: config's web_output, else {DEFAULT_OUTPUT})",
     )
-    parser.add_argument(
-        "--stale-hours",
-        type=float,
-        default=1.0,
-        help="Flag a cam 'stale' after this many hours without a new frame (default: %(default)s)",
-    )
     return parser.parse_args()
 
 
@@ -501,11 +477,8 @@ def main():
     output = args.output or Path(config.get("web_output", DEFAULT_OUTPUT))
 
     now = datetime.now(PACIFIC)
-    stale_after = timedelta(hours=args.stale_hours)
-    page_data = build_page_data(
-        archive_dir, log_path, now, stale_after, cam_config=config.get("cams")
-    )
-    html_doc = render_html(page_data, now, stale_after)
+    page_data = build_page_data(archive_dir, log_path, now, cam_config=config.get("cams"))
+    html_doc = render_html(page_data, now)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html_doc)

@@ -53,33 +53,6 @@ def test_daily_counts_buckets_by_capture_date(tmp_path):
     assert counts == {date(2026, 7, 16): 2, date(2026, 7, 17): 1}
 
 
-def test_read_capture_log_missing_file_is_empty(tmp_path):
-    assert generate.read_capture_log(tmp_path / "capture.log") == []
-    assert generate.read_capture_log(None) == []
-
-
-def test_read_capture_log_tolerates_bad_trailing_line(tmp_path):
-    log = tmp_path / "capture.log"
-    log.write_text(json.dumps({"cam": "summit", "outcome": "saved"}) + "\n" + '{"cam": "base",')
-
-    entries = generate.read_capture_log(log)
-
-    assert entries == [{"cam": "summit", "outcome": "saved"}]
-
-
-def test_latest_outcomes_keeps_last_entry_per_cam():
-    entries = [
-        {"cam": "summit", "outcome": "saved"},
-        {"cam": "base", "outcome": "fetch_failed"},
-        {"cam": "summit", "outcome": "stale"},
-    ]
-
-    latest = generate.latest_outcomes(entries)
-
-    assert latest["summit"]["outcome"] == "stale"
-    assert latest["base"]["outcome"] == "fetch_failed"
-
-
 def test_cam_health_flags_stale_when_last_frame_old(tmp_path):
     now = datetime(2026, 7, 17, 12, 0, tzinfo=PACIFIC)
     frames = [_write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800")]
@@ -106,6 +79,14 @@ def test_cam_health_no_frames_is_stale():
 
     assert health["is_stale"] is True
     assert health["last_time"] is None
+
+
+def test_stale_after_for_uses_cam_declared_interval():
+    assert generate.stale_after_for({"interval_minutes": 30}) == timedelta(minutes=60)
+
+
+def test_stale_after_for_orphaned_cam_is_always_stale():
+    assert generate.stale_after_for(None) == timedelta(0)
 
 
 def test_heatmap_grid_shape_and_end_alignment():
@@ -229,20 +210,34 @@ def test_build_page_data_looks_up_cam_url(tmp_path):
         tmp_path,
         None,
         now,
-        timedelta(hours=1),
-        cam_config={"summit": {"url": "https://example.com/summit.jpg"}},
+        cam_config={"summit": {"url": "https://example.com/summit.jpg", "interval_minutes": 15}},
     )
 
     assert data["sites"][0]["cams"][0]["url"] == "https://example.com/summit.jpg"
 
 
-def test_build_page_data_url_missing_for_unconfigured_cam(tmp_path):
+def test_build_page_data_url_missing_when_cam_config_omits_it(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
 
     assert data["sites"][0]["cams"][0]["url"] is None
+
+
+def test_build_page_data_orphaned_cam_is_stale_without_crashing(tmp_path):
+    # A cam with archived frames but no entry at all in the current config
+    # (e.g. decommissioned) shouldn't need a guessed interval or blow up.
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, cam_config={})
+
+    summit = data["sites"][0]["cams"][0]
+    assert summit["url"] is None
+    assert summit["health"]["is_stale"] is True
 
 
 def test_render_html_links_cam_name_to_its_url(tmp_path):
@@ -253,10 +248,9 @@ def test_render_html_links_cam_name_to_its_url(tmp_path):
         tmp_path,
         None,
         now,
-        timedelta(hours=1),
-        cam_config={"summit": {"url": "https://example.com/summit.jpg"}},
+        cam_config={"summit": {"url": "https://example.com/summit.jpg", "interval_minutes": 15}},
     )
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    doc = generate.render_html(data, now)
 
     assert '<a href="https://example.com/summit.jpg"' in doc
     assert ">summit</a>" in doc
@@ -266,8 +260,8 @@ def test_render_html_is_self_contained_and_shows_cams(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
 
     assert doc.startswith("<!doctype html>")
     assert "bluewood" in doc and "summit" in doc
@@ -279,8 +273,8 @@ def test_render_html_defaults_to_dark_theme_with_a_selector(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
 
     assert '<html lang="en" data-theme="dark">' in doc
     assert '<option value="dark" selected>Dark</option>' in doc
@@ -296,8 +290,8 @@ def test_render_html_shows_only_filename_for_saved_detail(tmp_path):
     log.write_text(json.dumps({"cam": "summit", "outcome": "saved", "detail": full_path}) + "\n")
     now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, log, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, log, now)
+    doc = generate.render_html(data, now)
 
     assert "frame.jpg" in doc
     assert full_path not in doc
@@ -310,8 +304,8 @@ def test_render_html_keeps_full_detail_for_non_saved_outcomes(tmp_path):
     log.write_text(json.dumps({"cam": "summit", "outcome": "fetch_failed", "detail": error}) + "\n")
     now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, log, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, log, now)
+    doc = generate.render_html(data, now)
 
     assert html.escape(error) in doc
 
@@ -320,8 +314,8 @@ def test_render_html_shows_a_thumbnail_of_the_newest_frame(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
 
     assert (
         '<img class="cam-thumb" '
@@ -334,8 +328,8 @@ def test_heatmap_tooltip_leads_with_the_image_count(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
 
     assert 'title="2 images on 2026-07-16"' in doc
 
@@ -344,8 +338,8 @@ def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, None, now, timedelta(hours=1))
-    doc = generate.render_html(data, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
 
     assert '<a href="archive/">browse the full archive</a>' in doc
     assert "free of" in doc
@@ -358,7 +352,7 @@ def test_build_page_data_pairs_health_with_log(tmp_path):
     log.write_text(json.dumps({"cam": "summit", "outcome": "saved", "detail": "ok"}) + "\n")
     now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
 
-    data = generate.build_page_data(tmp_path, log, now, timedelta(hours=1))
+    data = generate.build_page_data(tmp_path, log, now)
 
     summit = data["sites"][0]["cams"][0]
     assert summit["name"] == "summit"

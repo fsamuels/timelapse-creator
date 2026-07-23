@@ -8,7 +8,10 @@
 # capturing Bluewood in parallel for ~1-2 weeks so the two sources can be
 # compared before the Actions schedule is disabled — see docs/open-questions.md #1.
 # Two North Carolina cams (WLOS-hosted PNG snapshots) were added on top of that
-# — Pi-only, no GitHub Actions equivalent.
+# — Pi-only, no GitHub Actions equivalent. They run hourly (interval_minutes)
+# rather than every 15 min to slow disk growth; capture/main.py enforces the
+# per-cam interval itself (single timer, see deploy/pi/), so this is the only
+# place the schedule is declared.
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
@@ -19,23 +22,29 @@ cams:
     site: seattle  # frames land under archive/<site>/<cam>/...
     type: image
     url: "https://cdn.tegna-media.com/king/weather/columbia.jpg"
+    interval_minutes: 15
   queenanne:
     site: seattle
     type: image
     url: "https://cdn.tegna-media.com/king/weather/queenanne.jpg"
+    interval_minutes: 15
   summit:
     site: bluewood
     type: image
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?"
+    interval_minutes: 15
   base:
     site: bluewood
     type: image
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?"
+    interval_minutes: 15
   unca-tower:
     site: north-carolina
     type: image
     url: "https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20UNCA%20EcoNet.png"
+    interval_minutes: 60
   nantahala-outdoor-center:
     site: north-carolina
     type: image
     url: "https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20Nantahala%20Outdoor%20Center.png"
+    interval_minutes: 60

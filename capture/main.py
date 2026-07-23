@@ -1,11 +1,12 @@
 import argparse
 import logging
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
-from capture.archive import is_stale, save_frame
-from capture.capture_log import append_capture_log
+from capture.archive import PACIFIC, is_stale, save_frame
+from capture.capture_log import append_capture_log, is_due, latest_outcomes, read_capture_log
 from capture.fetch import fetch_frame
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -31,7 +32,14 @@ def main():
     archive_root = Path(config["archive_dir"])
     capture_log_path = config.get("capture_log")
 
+    now = datetime.now(PACIFIC)
+    outcomes = latest_outcomes(read_capture_log(capture_log_path))
+
     for name, cam in config["cams"].items():
+        if not is_due(cam["interval_minutes"], outcomes.get(name), now):
+            log.info("%s: not due yet (interval=%smin)", name, cam["interval_minutes"])
+            continue
+
         cam_dir = archive_root / cam["site"] / name
         try:
             data = fetch_frame(cam)

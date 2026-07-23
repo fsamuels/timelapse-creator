@@ -34,6 +34,20 @@
   hand-off trial. Fetched the same way as every other `type: image` cam (`fetch_image`) —
   the fact that these happen to be PNGs rather than JPEGs doesn't matter to the fetch or
   stale-detection path, since both just compare raw bytes.
+- **Per-cam capture interval.** The two North Carolina cams grew fast enough (heaviest
+  average frame size of all six cams) to threaten the Pi's SD card, so each cam now declares
+  its own required `interval_minutes` in config (no code-side default — every cam must set
+  it explicitly). `capture/main.py` still runs on a single systemd timer at the finest
+  cadence (15 min) and, on each tick, skips any cam that isn't due yet: due-ness compares
+  `now` against the cam's most recent `capture_log` entry (any outcome — saved, stale, or
+  fetch_failed all count as "checked"), using fixed epoch-aligned time buckets
+  (`capture/capture_log.py`'s `bucket`/`is_due`) rather than "elapsed time since last run."
+  The epoch-bucket approach specifically avoids a drift bug: comparing against elapsed time
+  since the last run means a few seconds of processing latency can push a cam just past its
+  interval threshold, deferring it a full tick and permanently inflating its effective
+  interval (an "hourly" cam settling into running every 75 minutes). Bucketing by absolute
+  time is immune to this since due-ness never depends on when the previous run finished. The
+  North Carolina cams are set to `interval_minutes: 60`; everything else stays at 15.
 
 ## Architecture: two decoupled pieces
 
@@ -254,11 +268,14 @@ downloaded per day.
   table (already the densest part of the page); placing it beside the heatmap grid is safe
   because that grid is fixed at 13 weeks regardless of archive size, so it never actually
   grows.
-- **Health/status view:** last frame per cam, how long ago, a staleness flag (`--stale-hours`,
-  default 1), the last-run outcome, and per-cam + total disk usage (`shutil.disk_usage` on
-  `archive_dir`). The outcome needs the persisted `capture.log` from Component 1 — status
-  can't be derived from successful frames alone, since a stuck/failing cam produces *no*
-  new archive entries.
+- **Health/status view:** last frame per cam, how long ago, a staleness flag, the last-run
+  outcome, and per-cam + total disk usage (`shutil.disk_usage` on `archive_dir`). Each cam's
+  stale threshold is `STALE_MULTIPLIER` (2) × its own configured `interval_minutes` — not a
+  single global cutoff — since cams can run on different cadences (see Component 1's
+  per-cam interval note). A cam with archived frames but no entry in the current config
+  (decommissioned) always reads as stale rather than guessing an interval for it. The
+  outcome needs the persisted `capture.log` from Component 1 — status can't be derived from
+  successful frames alone, since a stuck/failing cam produces *no* new archive entries.
 - **Browsing the archive:** each cam name links to its live image, and the generator
   symlinks `www/archive` to `archive_dir` on every run so the full frame archive is
   reachable as a plain directory listing at `/archive/` — no copying, and no new serving

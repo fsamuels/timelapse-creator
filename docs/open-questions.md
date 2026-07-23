@@ -73,8 +73,10 @@ Original option comparison, for reference:
 | Every 30–60 min | ~12–25 | < 1 GB | Fine for a season-long video; too choppy for interesting daily clips |
 
 The "storage/season" column above was estimated for the original 2 Bluewood cams. The Pi
-now captures 6 cams (2 Bluewood, 2 Seattle, 2 North Carolina) at the same 15-min cadence —
-see question 11 for the revised estimate and why it's driving an SD card upgrade.
+now captures 6 cams (2 Bluewood, 2 Seattle, 2 North Carolina); the two North Carolina cams
+were the heaviest contributors to disk growth and now run on a 60-min `interval_minutes`
+(everything else stays at 15) — see question 11 for the revised estimate and why it drove
+an SD card upgrade regardless.
 
 ## 3. What video output do we actually want? (mostly decided)
 
@@ -295,10 +297,13 @@ The Pi currently boots from a **4GB** microSD card. Two things are now squeezing
 - The OS + venv + dependencies already use a meaningful chunk of a 4GB card before any
   frames are captured.
 - The archive just grew from 4 cams to 6 (see question 10) — using question 2's ~1–2 GB/
-  season estimate for 2 cams as a baseline, 6 cams at the same 15-min cadence project to
-  roughly **~3–6 GB/season**, likely more: the North Carolina cams are PNG snapshots, which
-  tend to be larger per frame than the Bluewood/Seattle cams' JPEGs. That alone can exceed
-  a 4GB card within a single season.
+  season estimate for 2 cams as a baseline, 6 cams at the same 15-min cadence would have
+  projected to roughly **~3–6 GB/season**, likely more: the North Carolina cams are PNG
+  snapshots, which tend to be larger per frame than the Bluewood/Seattle cams' JPEGs — they
+  turned out to be the two heaviest cams of the six by a wide margin. Moving them to a
+  60-min `interval_minutes` (see question 2) cuts their combined contribution to roughly a
+  quarter of that, but the card was already tight enough that the migration below is still
+  warranted.
 
 **Recommendation:** move to a 64GB card before the archive fills the current one. The
 process is documented as a runbook in **`docs/sd-card-migration.md`** — a fresh-OS-install +
