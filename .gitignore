@@ -3,3 +3,7 @@ __pycache__/
 
 # Generated status page (web/generate.py default output)
 site/
+
+# Captured frames now live on the Pi's local disk, not in git
+# (historical frames stay in git history; see docs/open-questions.md #1)
+archive/
