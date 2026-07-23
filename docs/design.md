@@ -262,12 +262,17 @@ downloaded per day.
   frames (the "Pi-era only" activity scope), with no source-era filtering logic of its own.
 - **Activity heatmap:** derived directly from archive filenames — no new data source needed.
   One contribution-style grid per cam, grouped under its site. Each cell's tooltip reads
-  "N images on YYYY-MM-DD" (count leads, date follows).
+  "N images on YYYY-MM-DD" (count leads, date follows). The `title` attribute alone only
+  shows on hover, which touch screens have no way to trigger, so each day cell also carries
+  an inline `onclick` (no `<script>` tag, keeping the "no external assets" self-contained
+  requirement) that copies the same text into a small line under the grid — a tap on mobile
+  reveals it the same way a mouse hover does on desktop.
 - **Thumbnail:** the per-cam block shows the newest frame to the right of its heatmap — an
-  `<img>` reading straight from the `archive/` symlink, no copy step. Chosen over the status
-  table (already the densest part of the page); placing it beside the heatmap grid is safe
-  because that grid is fixed at 13 weeks regardless of archive size, so it never actually
-  grows.
+  `<img>` reading straight from the `archive/` symlink, no copy step, wrapped in a link to
+  that same full-size file so a click/tap opens it at full resolution instead of just the
+  cropped 108px-tall preview. Chosen over the status table (already the densest part of the
+  page); placing it beside the heatmap grid is safe because that grid is fixed at 13 weeks
+  regardless of archive size, so it never actually grows.
 - **Health/status view:** last frame per cam, how long ago, a staleness flag, the last-run
   outcome, and per-cam + total disk usage (`shutil.disk_usage` on `archive_dir`). Each cam's
   stale threshold is `STALE_MULTIPLIER` (2) × its own configured `interval_minutes` — not a
@@ -276,6 +281,12 @@ downloaded per day.
   (decommissioned) always reads as stale rather than guessing an interval for it. The
   outcome needs the persisted `capture.log` from Component 1 — status can't be derived from
   successful frames alone, since a stuck/failing cam produces *no* new archive entries.
+- **Burn rate:** shown next to the disk-usage line at the top of the page — sums every cam's
+  bytes captured so far today and projects a full day from the elapsed hours since midnight
+  (`bytes_today / elapsed_hours * 24`). Suppressed for the first 15 minutes of the day, where
+  a single frame divided by a near-zero elapsed time would spike to a meaningless number;
+  `None` in that window (and whenever there are no frames at all) rather than a misleading
+  figure.
 - **Browsing the archive:** each cam name links to its live image, and the generator
   symlinks `www/archive` to `archive_dir` on every run so the full frame archive is
   reachable as a plain directory listing at `/archive/` — no copying, and no new serving

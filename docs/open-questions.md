@@ -224,10 +224,17 @@ Options considered and set aside for now:
   in the path); no new data source needed. **Decided: Pi-era only** — the generator reads
   `archive_dir` from the config, so on the Pi it shows only Pi-captured frames. This needs
   no explicit era-filtering code: it's just a consequence of pointing at the Pi's local
-  archive rather than the repo's git-committed GitHub Actions history.
+  archive rather than the repo's git-committed GitHub Actions history. **Tap-friendly
+  tooltips (implemented):** the day cells' `title` tooltip only shows on hover, which isn't
+  reachable on a touchscreen, so each cell also has an inline `onclick` (no `<script>` tag —
+  stays self-contained) that copies its text into a visible line below the grid, giving touch
+  users the same "N images on YYYY-MM-DD" detail a tap gives on desktop.
 - **Health/status** — last successful frame per cam, last-run outcome, a "stale — no update
   in over N hours" flag, and now per-cam + total disk usage (`shutil.disk_usage` on
-  `archive_dir`). This *does* need new data: see question 9.
+  `archive_dir`), plus a projected daily burn rate (implemented) at the top of the page —
+  today's captured bytes across all cams extrapolated to a full day from the elapsed hours
+  since midnight, hidden for the first 15 minutes of the day to avoid a wild early spike.
+  This *does* need new data: see question 9.
 
 **Browsing the raw archive (implemented):** each cam's name in the status table links out
 to its live CameraFTP image, and `web/generate.py` symlinks `www/archive` to `archive_dir`
@@ -240,10 +247,12 @@ tree) without having to revisit what's exposed.
 
 **Thumbnail (implemented):** each cam's per-cam block shows its newest frame to the right of
 its heatmap — an `<img>` pointed straight at the file under the `archive/` symlink above, so
-there's no separate copy step to keep in sync. Placed in the per-cam block rather than the
-status table (already the busiest part of the page), and beside the heatmap grid is safe
-because that grid stays a fixed 13-week width regardless of archive size — it wasn't
-actually the growth risk it first looked like. Wraps below the heatmap on narrow viewports.
+there's no separate copy step to keep in sync, wrapped in a link to that same file so it
+opens at full resolution instead of the thumbnail's cropped 108px-tall preview. Placed in
+the per-cam block rather than the status table (already the busiest part of the page), and
+beside the heatmap grid is safe because that grid stays a fixed 13-week width regardless of
+archive size — it wasn't actually the growth risk it first looked like. Wraps below the
+heatmap on narrow viewports.
 
 **Access — decided:** home network only for now, and that now covers the raw archive too
 (the `/archive/` symlink above), not just the generated page — the archive was fine to
