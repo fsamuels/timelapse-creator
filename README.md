@@ -4,9 +4,12 @@ Tools for building timelapse videos from the [Ski Bluewood webcams](https://blue
 (Dayton, WA) — and eventually any public webcam.
 
 **Status: capture pipeline is live on the Pi.** A Raspberry Pi Zero W (hostname
-`timelapse-pi`) is deployed and capturing all six cams (the two Bluewood cams, two Seattle
-dev cams, and two North Carolina cams) on a systemd timer, with a home-network status page
-live at `http://timelapse-pi.local:8080/`. GitHub Actions no longer captures on a schedule —
+`timelapse-pi`) is deployed and capturing four cams (the two Bluewood cams and two Seattle
+dev cams) on a systemd timer, with a home-network status page live at
+`http://timelapse-pi.local:8080/`. The two North Carolina cams are configured but
+commented out in `capture/config.pi.yaml` as of 2026-07-25, pending the SD card migration
+(`docs/sd-card-migration.md`) — re-enable them once the Pi is on the 64GB card. GitHub
+Actions no longer captures on a schedule —
 the earlier Bluewood-only cron job has been retired now that the Pi hand-off trial is
 complete (see `docs/open-questions.md` #1); `workflow_dispatch` remains as a manual
 emergency-capture fallback. The video builder (turning frames into an mp4) now has a first
@@ -41,24 +44,25 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by the
   `workflow_dispatch` manual emergency-capture fallback in GitHub Actions; not on a schedule
   anymore)
-- `capture/config.pi.yaml` — the Pi's config: all six cams (two Seattle KING 5 cams, added
-  to keep developing the pipeline while Bluewood was off-grid; the two Bluewood cams for
-  the hand-off trial; and two North Carolina cams — WLOS-hosted PNG snapshots of the UNCA
-  tower and the Nantahala Outdoor Center, Pi-only), plus a `capture_log` path
+- `capture/config.pi.yaml` — the Pi's config: two Seattle KING 5 cams, added to keep
+  developing the pipeline while Bluewood was off-grid, and the two Bluewood cams for the
+  hand-off trial, plus a `capture_log` path. Two North Carolina cams — WLOS-hosted PNG
+  snapshots of the UNCA tower and the Nantahala Outdoor Center, Pi-only — are defined but
+  commented out pending the SD card migration (`docs/sd-card-migration.md`)
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
 - `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
   preserving today's behavior), fetches each cam, skips failures/stale frames, saves new ones, and
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
-- `web/generate.py` — regenerates a single static status page (health/status table per cam,
-  each cam name linked to its live image, plus per-cam and total disk usage, a projected
-  daily disk burn rate extrapolated from today's capture rate so far, + a GitHub-style
-  activity heatmap with tap-friendly tooltips (day counts show in a line below the grid, not
-  just an unreachable-on-mobile hover title), + a per-cam thumbnail linking to the full-size
-  frame, + a Dark/Light/System theme picker defaulting to dark) from the archive filenames
-  and the capture log; also symlinks the raw archive in next to the page so it's directly
-  browsable
+- `web/generate.py` — regenerates a single static status page (health/status table per cam
+  including average image size, each cam name linked to its live image, plus per-cam and
+  total disk usage, a projected daily disk burn rate extrapolated from today's capture rate
+  so far along with an estimated days-until-full at that rate, + a GitHub-style activity
+  heatmap with tap-friendly tooltips (day counts show in a line below the grid, not just an
+  unreachable-on-mobile hover title), + a per-cam thumbnail linking to the full-size frame,
+  + a Dark/Light/System theme picker defaulting to dark) from the archive filenames and the
+  capture log; also symlinks the raw archive in next to the page so it's directly browsable
 - `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback

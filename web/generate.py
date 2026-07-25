@@ -126,6 +126,17 @@ def daily_burn_rate(bytes_today, now):
     }
 
 
+def days_until_full(free_bytes, projected_daily_bytes):
+    """Days of free space left at the projected daily burn rate.
+
+    None if there's no meaningful rate to project from (avoids a
+    divide-by-zero / infinite estimate when nothing was captured today).
+    """
+    if not projected_daily_bytes:
+        return None
+    return free_bytes / projected_daily_bytes
+
+
 def daily_counts(frames):
     """Count frames per capture date (a ``{date: int}`` mapping)."""
     counts = {}
@@ -201,6 +212,23 @@ def _human_bytes(n):
         size /= 1024
 
 
+def _human_duration(days):
+    """Render a day count as the largest unit that reads naturally: '18 hours',
+    '6 days', '3.2 months', or '1.4 years' — a fraction of a day (a few hours
+    left on a nearly-full card) shouldn't be reported as '0 days'.
+    """
+    if days < 1:
+        hours = days * 24
+        return f"{hours:.0f} hour{'' if round(hours) == 1 else 's'}"
+    if days < 60:
+        return f"{days:.0f} day{'' if round(days) == 1 else 's'}"
+    if days < 730:
+        months = days / 30.44
+        return f"{months:.1f} month{'' if months == 1 else 's'}"
+    years = days / 365.25
+    return f"{years:.1f} year{'' if years == 1 else 's'}"
+
+
 def _human_ago(delta):
     seconds = int(delta.total_seconds())
     if seconds < 90:
@@ -252,21 +280,29 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
             bytes_today += bytes_captured_on(frames, today)
+            cam_bytes = frame_bytes(frames)
             cam_views.append(
                 {
                     "name": cam,
                     "url": (cam_cfg or {}).get("url"),
                     "health": cam_health(frames, outcomes.get(cam), now, stale_after_for(cam_cfg)),
                     "grid": heatmap_grid(daily_counts(frames), today),
-                    "bytes": frame_bytes(frames),
+                    "bytes": cam_bytes,
+                    "avg_bytes": cam_bytes / len(frames) if frames else None,
                     "thumb_url": thumb_url(frames, archive_dir),
                 }
             )
         site_views.append({"site": site, "cams": cam_views})
+    disk = disk_usage(archive_dir)
+    burn_rate = daily_burn_rate(bytes_today, now) if site_views else None
+    if burn_rate and disk:
+        burn_rate["days_until_full"] = days_until_full(
+            disk["free"], burn_rate["projected_daily_bytes"]
+        )
     return {
         "sites": site_views,
-        "disk": disk_usage(archive_dir),
-        "burn_rate": daily_burn_rate(bytes_today, now) if site_views else None,
+        "disk": disk,
+        "burn_rate": burn_rate,
     }
 
 
@@ -341,7 +377,7 @@ footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
 """
 
 
-def _status_row(cam_name, url, health, cam_bytes, now):
+def _status_row(cam_name, url, health, cam_bytes, avg_bytes, now):
     if url:
         name_cell = (
             f'<a href="{html.escape(url)}" target="_blank" rel="noopener">'
@@ -373,9 +409,14 @@ def _status_row(cam_name, url, health, cam_bytes, now):
             run_cell += f' <span class="muted">{html.escape(str(detail))}</span>'
     else:
         run_cell = '<span class="muted">—</span>'
+    avg_cell = (
+        html.escape(_human_bytes(avg_bytes))
+        if avg_bytes is not None
+        else '<span class="muted">—</span>'
+    )
     return (
         f"<tr><td>{name_cell}</td><td>{badge}</td>"
-        f"<td>{last_cell}</td><td>{health['frame_count']}</td>"
+        f"<td>{last_cell}</td><td>{avg_cell}</td><td>{health['frame_count']}</td>"
         f"<td>{html.escape(_human_bytes(cam_bytes))}</td><td>{run_cell}</td></tr>"
     )
 
@@ -464,10 +505,16 @@ def render_html(page_data, now):
         hours = burn["elapsed_hours"]
         projected = html.escape(_human_bytes(burn["projected_daily_bytes"]))
         so_far = html.escape(_human_bytes(burn["bytes_today"]))
+        until_full = burn.get("days_until_full")
+        until_full_text = (
+            f" · {_human_duration(until_full)} of free space left at this rate"
+            if until_full is not None
+            else ""
+        )
         parts.append(
             f'<p class="sub">Burn rate: {projected}/day projected from today\'s rate '
             f'({so_far} captured in the first {hours:.1f} hr{"" if hours == 1 else "s"} '
-            f"of today)</p>"
+            f"of today){until_full_text}</p>"
         )
 
     if not sites:
@@ -477,10 +524,19 @@ def render_html(page_data, now):
         parts.append(f"<h2>{html.escape(site['site'])}</h2>")
         parts.append(
             "<table><thead><tr><th>Cam</th><th>Status</th><th>Last frame</th>"
-            "<th>Frames</th><th>Disk</th><th>Last run</th></tr></thead><tbody>"
+            "<th>Avg size</th><th>Frames</th><th>Disk</th><th>Last run</th></tr></thead><tbody>"
         )
         for cam in site["cams"]:
-            parts.append(_status_row(cam["name"], cam.get("url"), cam["health"], cam["bytes"], now))
+            parts.append(
+                _status_row(
+                    cam["name"],
+                    cam.get("url"),
+                    cam["health"],
+                    cam["bytes"],
+                    cam.get("avg_bytes"),
+                    now,
+                )
+            )
         parts.append("</tbody></table>")
         for cam in site["cams"]:
             parts.append('<div class="cam-block">')
