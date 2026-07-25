@@ -187,11 +187,14 @@ stretch of both cams being fully dark (e.g. a deep off-season closure) would eve
 silently turn the schedule off, needing a manual re-enable. Relevant again during the trial
 period in question 1, less so afterward once the schedule is disabled deliberately.
 
-**Branch protection follow-up:** `main` currently has no GitHub branch protection. That was
-left open partly because `capture.yml`'s direct commits would otherwise be blocked by a
-"PRs only" rule — now that GitHub Actions capture is disabled and `archive/` is no longer
-tracked in git, that blocker is gone, and adding a GitHub ruleset requiring PRs on `main`
-for everyone (no bypass needed) is a clean follow-up (see question 12).
+**Branch protection (done):** `main` is now protected — PRs required for everyone including
+admins (no bypass), the `lint-and-test` status check from `ci.yml` must pass before merging,
+and force-pushes/branch deletion are disabled. This was left open earlier because
+`capture.yml`'s direct commits would otherwise have been blocked by a "PRs only" rule; now
+that GitHub Actions capture is disabled and `archive/` is no longer tracked in git,
+`capture.yml`'s `workflow_dispatch` fallback never has anything to push (there's nothing
+staged once `archive/` is gitignored), so the protection rule has nothing left to conflict
+with.
 
 ## 8. The web interface (implemented)
 
@@ -362,6 +365,5 @@ than relying on the estimate above.
       season presets and a subsampling stage remain follow-ons.
 - [x] Decide output format (question 3) and gap-handling-in-video (question 4) — on-demand
       CLI is the core (presets deferred); gaps are skipped silently, no timestamp overlay.
-- [ ] Now that GitHub Actions is disabled and archived frames are removed from git, lock
-      `main` down with a GitHub ruleset requiring PRs for everyone (see question 7
-      follow-up) — a repo-settings change, not done as part of this cleanup
+- [x] Lock `main` down with branch protection requiring PRs for everyone, no bypass, plus
+      the `lint-and-test` status check (see question 7 follow-up)
