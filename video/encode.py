@@ -55,6 +55,10 @@ def run_ffmpeg(concat_script, output_path, tmp_dir):
             str(concat_path),
             "-vsync",
             "vfr",
+            # yuv420p requires even width/height; frame sources (e.g. normalize/align.py's
+            # crop box) don't guarantee that, so round down to the nearest even pixel.
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
             "-pix_fmt",
             "yuv420p",
             "-c:v",
