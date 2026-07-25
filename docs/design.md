@@ -170,9 +170,12 @@ inputs, so it can be re-run with different settings at any time — nothing here
 archive or normalize output.
 
 ```
-python -m video.main archive/bluewood/summit -o summit.mp4 --fps 24 --from 2026-01-05 --to 2026-02-20
-python -m video.main normalized/drone-shots -o drone.mp4 --proportional --duration 30
+python -m video.main archive/bluewood/summit -o output/summit.mp4 --fps 24 --from 2026-01-05 --to 2026-02-20
+python -m video.main output/normalized/drone-shots -o output/drone.mp4 --proportional --duration 30
 ```
+
+Output videos are build artifacts (regeneratable from `archive/`, not source), so by
+convention they're written under `output/`, which is gitignored.
 
 ### Two frame sources, one pipeline
 
@@ -299,15 +302,15 @@ downloaded per day.
 
 ## Component 4: drone photo normalization
 
-**Implemented** in `normalize/` (`align.py`, `main.py`). A separate build-time input path
-from the fixed webcams: drone photos aren't captured on a schedule by this project, they're
-an existing batch of images with slightly varying position, angle, and altitude between
-shots, which would make a naive frame-concat timelapse look shaky. Normalization aligns and
-crops a directory of them onto a common frame so they cut together smoothly, before handing
-off to the video builder (Component 2).
+**Implemented** in `normalize/` (`align.py`, `main.py`, `control_points.py`, `annotate.py`).
+A separate build-time input path from the fixed webcams: drone photos aren't captured on a
+schedule by this project, they're an existing batch of images with slightly varying
+position, angle, and altitude between shots, which would make a naive frame-concat timelapse
+look shaky. Normalization aligns and crops a directory of them onto a common frame so they
+cut together smoothly, before handing off to the video builder (Component 2).
 
 ```
-python -m normalize.main path/to/drone-photos path/to/normalized --size 1920x1080
+python -m normalize.main path/to/drone-photos output/normalized/drone-shots --size 1920x1080
 ```
 
 Pipeline, entirely local (OpenCV + Pillow + numpy, no network calls, no AI model):
@@ -315,39 +318,202 @@ Pipeline, entirely local (OpenCV + Pillow + numpy, no network calls, no AI model
 1. **Order** photos by EXIF capture time (`DateTimeOriginal`, falling back to the `DateTime`
    tag, falling back to file mtime if a photo has no EXIF data at all) — not filename, since
    drone photo filenames aren't necessarily chronological.
-2. **Detect features** (ORB) in a reference frame (first photo in that capture-time order,
-   unless `--reference` overrides it) and in each other photo.
-3. **Match and estimate a similarity transform** (rotation + uniform scale + translation —
-   deliberately not a full projective homography, since drone frames are slightly
-   shifted/tilted/zoomed versions of roughly the same shot rather than different viewing
-   angles; a homography would over-fit and risk keystone distortion), then check how many of
-   those matches actually agree with one consistent transform (RANSAC inliers). A photo whose
-   inlier count is below `--min-matches` (default 10) — a low-texture scene like open snow or
-   sky, or simply an unrelated photo that doesn't belong in this sequence — is skipped and
-   reported rather than forced through a bad alignment. This is the tolerance knob: raise
-   `--min-matches` to more strictly exclude photos that don't clearly match the reference
-   (useful when pointing it at a directory with unrelated shots mixed in, so they don't have
-   to be sorted out by hand first), lower it to be more lenient.
-4. **Warp** each photo into the reference's coordinate space, tracking which pixels are real
+2. **Estimate an alignment** from a reference frame (first photo in that capture-time order,
+   unless `--reference` overrides it) to each other photo. Three ways to do this exist, in
+   increasing order of manual effort and precision — see "Three ways to align a photo" below.
+3. **Warp** each photo into the reference's coordinate space, tracking which pixels are real
    image data vs. the black border the warp introduces.
-5. **Crop to the common region**: intersect every frame's valid-pixel mask, then shrink an
-   axis-aligned box border-by-border (whichever edge has the fewest valid pixels) until it's
-   fully valid — a simple, deterministic way to guarantee no black edges without solving for
-   the true largest inscribed rectangle.
-6. **Resize** (optional, `--size`) to a final fixed output size.
-7. **Write a manifest**: `manifest.json` in the output directory, mapping each aligned
-   frame's filename to its EXIF capture timestamp (ISO 8601). This exists because step 4's
+4. **Handle each frame's black border** (`--crop`, default `none`): every warped frame has
+   some black border where the warp didn't reach, and there are two ways to deal with that.
+   `none` (default) leaves it as real black and keeps every frame at the reference's full
+   size. `intersection` instead intersects every aligned frame's valid-pixel mask and shrinks
+   an axis-aligned box border-by-border (whichever edge has the fewest valid pixels) until
+   it's fully valid, guaranteeing no black edges anywhere — but that guarantee gets expensive
+   fast: each frame's own border, intersected against every other frame's, compounds as more
+   frames are aligned. On this project's actual 118-photo drone archive, the single
+   best-aligned frame alone already lost ~46% of its area to its own border, and the region
+   valid across all of them shrank to ~22% of the frame by the time all were combined — for a
+   batch this size, `intersection` was discarding most of every photo. `none` is the default
+   for exactly that reason.
+5. **Resize** (optional, `--size`) to a final fixed output size.
+6. **Write a manifest**: `manifest.json` in the output directory, mapping each aligned
+   frame's filename to its EXIF capture timestamp (ISO 8601). This exists because step 3's
    `cv2.imwrite` silently strips EXIF from the warped/cropped output — without the manifest,
    every timestamp recovered in step 1 would be lost the moment the frame is written back
    out. The video builder (Component 2) reads this manifest to recover each frame's real
    capture time, which its proportional-duration timing mode depends on. Frames
-   `normalize_sequence` skipped (step 2/3) are correctly absent from the manifest.
+   `normalize_sequence` skipped (step 2) are correctly absent from the manifest.
 
 This is intentionally a standalone preprocessing step rather than folded into
 `capture/archive.py` — it's a different pipeline shape (batch import vs. scheduled capture)
 and matches the project's "archive raw, filter/normalize at build time" principle: the
-normalization choices here (similarity vs. homography, the crop heuristic, match threshold)
-are exactly the kind of decision that should be re-runnable, not baked into capture.
+normalization choices here (alignment method, the crop heuristic, match threshold) are
+exactly the kind of decision that should be re-runnable, not baked into capture.
+
+### Three ways to align a photo
+
+Real usage on this project's ~118-photo drone archive (aerial farmland: mostly low-texture
+grass/dirt, spanning two years of seasonal appearance change, several distinct drone
+zoom/altitude settings) worked through three approaches, each a real tradeoff rather than a
+strict upgrade path — pick the cheapest one that actually gets a clean result for the content
+at hand:
+
+| Method | `--method` | Cost | Best for | Watch out for |
+| --- | --- | --- | --- | --- |
+| Sparse feature matching | `orb` | Fast | Scenes with genuine texture/structure (buildings, rock, urban) | Starves on low-texture scenes (grass/dirt/pavement) — keypoint budget gets diluted by noisy texture, crowding out the few reliable structural keypoints |
+| Intensity-based alignment | `ecc` (default) | Slower (coarse-to-fine pyramid per photo) | Low-texture scenes; survives large seasonal/appearance change (bare ground ↔ snow) as long as structure is still visible | A *global* correlation score can look good while still being locally imprecise on secondary structures — see the gotcha below. Also sensitive to how much destination-image resolution disagreement exists (see the shape-mismatch gotcha) |
+| Manual control points (anchors) | `--control-points` | Most manual effort, but exact | Any photo automated matching can't precisely handle: a distinct zoom/altitude grouping, an extreme angle, a lighting condition too far from the reference | Only as good as the points clicked — see the tool guidance below |
+
+On this project's actual footage, `orb` at its default settings aligned only ~7% of photos
+(most got excluded by too few keypoints), `ecc` alone got to ~94%, and `ecc` + a modest set
+of manually-annotated anchors (control points on ~15 photos, covering the distinct
+zoom/altitude groupings and a few individually-troublesome shots) got effectively all
+non-rejected photos aligning cleanly. The jump from "mostly works" to "actually looks right"
+came from the anchors, not from tuning `ecc`'s thresholds further — a global match-confidence
+score doesn't guarantee local precision, and no amount of threshold-tuning fixes that.
+
+**Two concrete gotchas worth remembering** if this code gets touched again:
+- `cv2.findTransformECC` silently produces a *wrong* transform (not an error) if the
+  template and input images aren't the same pixel shape — it does not resample them to match
+  internally, despite nothing in its signature suggesting that requirement.
+  `estimate_alignment_ecc` resizes the target to the reference's exact dimensions before
+  calling it for exactly this reason (the affine model's independent x/y scale absorbs any
+  resulting aspect-ratio distortion).
+- `cv2.findTransformECC`'s return value is easy to get backwards (it maps in the opposite
+  direction the shape suggests at first read), and a reversed-direction bug can still produce
+  plausible-looking small-scale warps in a quick visual check while being badly wrong on real
+  rotation/scale.
+
+Both are the kind of bug that passes a casual visual check and only shows up as a hard-to-place
+"this doesn't quite look right" — verify any change to `estimate_alignment_ecc` against a
+synthetic pair with a *known* transform (recover it exactly, not just "looks plausible"), not
+just eyeballed overlays.
+
+### Manual control points (anchors)
+
+**Implemented** in `normalize/control_points.py` (data model + homography math) and
+`normalize/annotate.py` (the tool). For photos automated matching can't precisely handle —
+common when a batch spans several distinct zoom/altitude groupings, since even a
+high-confidence match to the single global reference can be locally imprecise on secondary
+structures the confidence score doesn't weight heavily — a person can click a handful of
+point correspondences (e.g. the same barn corner) between the reference and one "anchor"
+photo, once. Because a person picked them, the resulting alignment is exactly as accurate as
+those clicks, not bounded by how much texture the scene happens to have.
+
+```
+python -m normalize.annotate path/to/drone-photos control_points/<name>.json \
+    --reference path/to/drone-photos/some_photo.jpg
+```
+
+- **The tool** is a local `http.server` page (stdlib only, no new dependency) meant to be
+  opened in your own browser, not driven by Claude — the reference photo and one other photo
+  side by side; click the same physical point on both (bold, sharp landmarks — building
+  corners, fence-post junctions — not open grass, which can't be clicked precisely, and not
+  anything that moves between shots, like shadows or vehicles) to record a correspondence. At
+  least 4 pairs turns the current photo into an anchor (`cv2.findHomography`, plain
+  least-squares — these are hand-verified correspondences, not noisy automated matches, so
+  there's no outlier to guard against with RANSAC); 5-8 spread across the frame is better than
+  exactly 4, since 4 points fit with zero residual and one imprecise click warps the whole
+  image. By default every photo in the input directory is browsable (Prev/Next paging, a
+  jump-to dropdown, an "only unreviewed" filter) — not just a suggested few — so a full triage
+  pass of a whole archive is practical. **Reject** marks a photo as not belonging in the
+  sequence at all (or too poor an angle/zoom to be worth aligning) without needing points;
+  `normalize_sequence` excludes a rejected photo entirely, whether it would have been an
+  anchor or matched automatically.
+- **Saves straight to disk** as you click — nothing to download or copy/paste, and the
+  process can stop and resume anytime; the control points file just accumulates.
+- **How a regular (non-anchor, non-rejected) photo uses the anchors**: `normalize_sequence`
+  tries an automated match (`--method`) against the reference *and* every anchor, keeping
+  whichever scores best, then composes that automated estimate with the winning anchor's
+  manually-verified transform (chaining a 2x3 affine with the anchor's 3x3 homography via
+  `warp_to_reference`, which dispatches to `cv2.warpAffine`/`warpPerspective` by matrix shape).
+  This is more accurate than matching everything against one global reference on a batch
+  spanning several distinct groupings: the automated step only has to close the smaller gap
+  to the *nearest* anchor, and the anchor's own human-verified transform carries the rest of
+  the way exactly.
+- **The control points file** (`control_points/<name>.json`) is a plain JSON dict —
+  `{"reference": ..., "anchors": {name: {points_reference, points_anchor}}, "rejected":
+  [...]}` — meant to be committed to the repo. Unlike `output/` (regeneratable from
+  `archive/`, gitignored), the clicks (and rejections) it records are real, non-regeneratable
+  manual work: re-running `normalize.main` with `--control-points` later, as more photos are
+  captured, doesn't require re-clicking anything already annotated. No image data is stored
+  in it, only pixel coordinates and filenames, so it stays safe to check in even though
+  `archive/`/`output/` (the actual photos) are not.
+
+## Component 5: video build-time QA labels and color correction
+
+**Implemented** in `video/labels.py` and `video/color.py`, wired into `video/main.py` as
+opt-in flags. Both operate on already-selected frames right before encoding (Component 2's
+pipeline), not on the archive or normalize output — regeneratable, build-time-only, matching
+the project's "archive raw, filter/normalize at build time" principle.
+
+### QA labels (`--label-date`, `--label-filename`)
+
+Burns bold white-on-black text into the bottom-left corner of every frame: capture date
+(`--label-date`, e.g. "July 24, 2026", larger) stacked above source filename
+(`--label-filename`, smaller), with padding between them and from the frame edge. Meant to
+be turned on while dialing in alignment/anchors/color-correction settings — so a frame that
+looks wrong can be immediately traced to a specific date/file — and turned back off for the
+actual final render; not something that's meant to stay in a finished video.
+
+```
+python -m video.main output/normalized/drone-shots -o output/preview.mp4 \
+    --proportional --duration 30 --label-date --label-filename
+```
+
+Uses `PIL.ImageFont.load_default(size=...)` (Pillow's own bundled font — portable across the
+dev machine and the Pi, no system font file dependency) with `stroke_width` as a fake-bold
+technique (Pillow's default font has no bold variant of its own).
+
+### Color-cast correction (`--white-balance`)
+
+For a batch where lighting drifts across frames (e.g. some shots late in the day, warm/red;
+others midday, neutral) but scene *content* varies too much between frames for a generic
+whole-image histogram match to be safe. A histogram match forces every frame's color
+statistics toward one reference's — which also drags a snow-covered frame's whites toward
+whatever hue a lush-green reference happens to have, or strips a naturally green summer
+frame's color entirely. **Decided against** for exactly that reason.
+
+Instead: sample one small, fixed pixel region — a patch on some physically neutral-ish
+surface (this project uses a metal roof) visible across the batch at a consistent location,
+which only works because the frames are already aligned into a shared coordinate space
+(Component 4). Comparing that one patch's color between a frame and a chosen "target" frame
+(one with lighting you want the rest of the batch to look like) gives a per-channel gain that
+corrects the *lighting's* color cast without touching color relationships elsewhere in the
+frame the way a full histogram match would — safe for the snow frame, since its own patch
+reading is already close to neutral and the correction stays gentle.
+
+```
+python -m video.main output/normalized/drone-shots -o output/out.mp4 \
+    --proportional --duration 30 \
+    --white-balance \
+    --white-balance-patch 1050,920,1120,1000 \
+    --white-balance-target output/normalized/drone-shots/some_well_lit_photo.jpg
+```
+
+- `--white-balance-patch top,left,bottom,right` — pixel box in the frames' shared aligned
+  coordinate space (matching `align.py`'s crop_box convention). Sequence-specific: there's no
+  sensible default, since the right patch location depends entirely on where a suitable
+  neutral surface happens to sit in that particular reference frame.
+- `--white-balance-target` — path to the photo whose patch color is the correction target.
+- **Safety bounds** (`video/color.py`), both discovered from real failures on this project's
+  footage, not designed in speculatively upfront:
+  - `MIN_PATCH_BRIGHTNESS`: a patch reading too dark to trust (e.g. it fell in shadow for
+    that one frame) skips correction for that frame entirely rather than dividing by a
+    near-zero denominator into a wild gain.
+  - `DEFAULT_GAIN_CLAMP` (0.5-2.0): bounds the *ratio* a patch comparison can imply,
+    regardless of how extreme the raw comparison looks.
+  - `limit_gains_for_headroom`: **the clamp above isn't sufficient by itself** — a frame can
+    have a perfectly plausible, in-range gain that's still too large for that specific
+    frame's own content. A real example: an early-morning frame's patch read dim next to an
+    already-bright, sunlit arena elsewhere in the same frame; the patch-implied gain (~2x,
+    within the clamp) blew out real detail across nearly half the image when applied
+    uncapped. This function checks the *frame's own* highlights (99th percentile, so a
+    handful of already-blown-out specular pixels don't distort the check) before applying a
+    gain, and scales it down (never up) so correction can't push those highlights past
+    saturation — the frame ends up correctly close to its original exposure instead of
+    blown out, which is the right outcome when a strong correction and a well-exposed frame
+    conflict.
 
 ## Storage: frames and bucket sync
 

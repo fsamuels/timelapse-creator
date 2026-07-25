@@ -32,7 +32,7 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 
 | Document | Contents |
 | --- | --- |
-| [docs/design.md](docs/design.md) | Architecture: the capture job, the video builder, storage layout, and outage/stale-frame handling |
+| [docs/design.md](docs/design.md) | Architecture: the capture job, the video builder, drone-photo normalization (alignment methods, manual anchors), video build-time QA labels/color correction, storage layout, and outage/stale-frame handling |
 | [docs/open-questions.md](docs/open-questions.md) | Decisions made so far and what's still open (output format, gap handling in video, long-term storage), with options and recommendations |
 | [docs/sd-card-migration.md](docs/sd-card-migration.md) | Runbook for migrating the Pi's SD card from 4GB to 64GB (documented, not yet executed) |
 
@@ -65,17 +65,52 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up
   doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all four cams and
   serving the status page
-- `normalize/` — aligns and crops a directory of not-quite-fixed-position photos (e.g. drone
-  shots) onto a common frame so they cut into a smooth timelapse; a separate, on-demand batch
-  input path from the scheduled webcam capture above. Photos are processed in EXIF
-  capture-time order, and any photo that doesn't match the reference closely enough
-  (`--min-matches`) is automatically skipped and reported, so unrelated shots mixed into the
-  input directory don't need to be sorted out by hand. Runs entirely locally (OpenCV feature
-  matching + a similarity transform, no network calls, no AI model): `python -m
-  normalize.main <input-dir> <output-dir> [--min-matches N] [--size WxH]`. Also writes a
-  `manifest.json` (filename → EXIF capture timestamp) alongside the aligned frames, since
-  the alignment/crop step strips EXIF — the video builder below reads it to time
-  drone-photo clips proportionally. See `docs/design.md` Component 4.
+- `normalize/` — aligns a directory of not-quite-fixed-position photos (e.g. drone shots) onto
+  a common frame so they cut into a smooth timelapse; a separate, on-demand batch input path
+  from the scheduled webcam capture above. Photos are processed in EXIF capture-time order,
+  and any photo that doesn't match well enough (`--min-confidence`/`--min-matches`), or is
+  manually rejected (see `annotate.py` below), is skipped and reported, so unrelated shots
+  mixed into the input directory don't need to be sorted out by hand. Three ways to align a
+  photo, in increasing order of manual effort and precision — pick the cheapest one that
+  actually works for the content at hand (see `docs/design.md` Component 4 for a full
+  comparison and what happened trying each on this project's actual archive):
+  - `--method ecc` (default) — directly optimizes against pixel intensity across the whole
+    image; the better fit for low-texture scenes like grass/dirt fields, survives large
+    seasonal appearance change (bare ground ↔ snow).
+  - `--method orb` — sparse feature matching; faster, needs more distinctive texture to work
+    from (buildings, rock, urban scenes).
+  - `--control-points path/to/control_points.json` — manually-clicked point correspondences
+    on specific "anchor" photos (`normalize/annotate.py`, a local browser tool — see below),
+    for photos automated matching can't precisely handle. A batch spanning several distinct
+    zoom/altitude groupings is the common case: even a high-confidence automated match to one
+    global reference can still be locally imprecise, and no amount of threshold-tuning fixes
+    that the way a few manually-verified anchors do.
+
+  Each warped frame's black border is handled by `--crop`: `none` (default) keeps every frame
+  at the reference's full size with real black wherever that frame's own alignment didn't
+  reach; `intersection` crops every frame down to the one rectangle valid across *all* aligned
+  frames, guaranteeing no black edges but shrinking fast as more frames are aligned. Runs
+  entirely locally (OpenCV, no network calls, no AI model): `python -m normalize.main
+  <input-dir> <output-dir> [--method ecc|orb] [--min-confidence N | --min-matches N]
+  [--control-points path] [--crop none|intersection] [--size WxH]`. Also writes a
+  `manifest.json` (filename → EXIF capture timestamp) alongside the aligned frames, since the
+  alignment/crop step strips EXIF — the video builder below reads it to time drone-photo
+  clips proportionally.
+- `normalize/annotate.py` — local browser tool (stdlib `http.server`, no new dependency;
+  meant to be opened in your own browser, not driven by Claude) for clicking the manual
+  control points `--control-points` uses: reference photo and one other photo side by side,
+  click the same physical point on both (4+ pairs turns a photo into an anchor), or Reject a
+  photo that doesn't belong at all. Every photo in the input directory is browsable by
+  default (Prev/Next, jump-to dropdown, "only unreviewed" filter), not just a suggested few,
+  so a full triage pass of a whole archive is practical. Saves straight to disk as you click
+  — stop and resume anytime. `python -m normalize.annotate <input-dir> <control-points-path>
+  --reference <path>`.
+- `control_points/` — one JSON file per sequence, holding `annotate.py`'s manually-clicked
+  points and rejections. Committed to the repo (unlike `output/`) since it's real,
+  non-regeneratable manual work — re-running normalization later, as more photos are
+  captured, doesn't require re-clicking anything already annotated. Contains only pixel
+  coordinates and filenames, no image data, so it stays safe to check in even though the
+  photos themselves are not.
 - `video/` — the video builder: turns a directory of frames (a webcam archive cam directory,
   or a `normalize/` output directory) into an mp4, through the same code path either way —
   it reads timestamps from a `manifest.json` if present, otherwise parses them from the
@@ -85,11 +120,28 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   `--min-hold`/`--max-hold` so no single gap dominates; right for irregularly-spaced batches
   like drone photos, where some weeks have several flights and others have one). Optional
   `--from`/`--to` date filtering, `--drop-dark` (mean-brightness threshold) and `--dedupe`
-  (drop residual exact-duplicate frames) filters. Encodes via ffmpeg's concat demuxer to
-  H.264/`yuv420p` mp4: `python -m video.main <input-dir> -o out.mp4 [--fps N | --proportional
-  --duration N] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--drop-dark] [--dedupe]`. Outage gaps
+  (drop residual exact-duplicate frames) filters. Two build-time-only, opt-in enhancements
+  (see `docs/design.md` Component 5):
+  - `--label-date`/`--label-filename` — burns the capture date and/or source filename into
+    the bottom-left corner of each frame, for QA while dialing in alignment/color settings;
+    not meant to stay in a final render.
+  - `--white-balance` (+ `--white-balance-patch top,left,bottom,right` +
+    `--white-balance-target path`) — corrects per-frame color cast (e.g. a warm/red evening
+    shot) by sampling a fixed patch on some neutral-ish surface (visible at a consistent
+    location only because the frames are already aligned) and scaling per-channel to match
+    that patch's color in a chosen target frame. Safer than a whole-image histogram match on
+    a batch with widely varying content (e.g. a snow frame next to lush-green summer ones),
+    since it corrects the *lighting* without touching color relationships elsewhere in the
+    frame.
+
+  Encodes via ffmpeg's concat demuxer to H.264/`yuv420p` mp4: `python -m video.main
+  <input-dir> -o output/out.mp4 [--fps N | --proportional --duration N] [--from YYYY-MM-DD]
+  [--to YYYY-MM-DD] [--drop-dark] [--dedupe] [--label-date] [--label-filename]
+  [--white-balance --white-balance-patch T,L,B,R --white-balance-target path]`. Outage gaps
   are skipped silently, no timestamp overlay. Daily-clip/season-video presets and a
-  subsampling stage are documented follow-ons, not built. See `docs/design.md` Component 2.
+  subsampling stage are documented follow-ons, not built.
+- `output/` — build artifacts: `normalize/`'s aligned-frame batches and `video/`'s rendered
+  mp4s. Gitignored and regeneratable from `archive/`, not source.
 
 ## Not implemented yet
 

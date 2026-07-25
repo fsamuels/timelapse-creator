@@ -7,3 +7,7 @@ site/
 # Captured frames now live on the Pi's local disk, not in git
 # (historical frames stay in git history; see docs/open-questions.md #1)
 archive/
+
+# Build artifacts: normalize/align.py's aligned-frame batches and
+# video/main.py's rendered mp4s. Regeneratable from archive/, not source.
+output/
