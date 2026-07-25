@@ -303,6 +303,14 @@ The status page picks these up with no code changes — `web/generate.py` derive
 list from whatever's actually in `archive_dir`, and cam URLs from the config, so a new site
 just appears once the Pi captures its first frame.
 
+**Update, 2026-07-25:** both cams' entries in `capture/config.pi.yaml` are commented out
+(not deleted) until the SD card migration (question 11) actually happens — no time yet to
+do the migration, and these two were the heaviest contributors to disk pressure. Their
+archived frames stay in `archive/north-carolina/` and the status page still shows them
+(now flagged stale, since nothing configured means no interval to judge freshness against —
+see `stale_after_for` in `web/generate.py`). Re-enable by uncommenting once question 11 is
+done.
+
 ## 11. SD card capacity migration (documented, not yet executed)
 
 The Pi currently boots from a **4GB** microSD card. Two things are now squeezing it:
