@@ -117,6 +117,57 @@ def test_drop_duplicate_frames_keeps_non_consecutive_repeats(tmp_path):
     assert [p.name for p, _ in result] == ["a.jpg", "b.jpg", "c.jpg"]
 
 
+def test_subsample_daily_keeps_frame_closest_to_target_hour():
+    frame_list = [
+        ("early.jpg", datetime(2026, 1, 1, 6, 0)),
+        ("noonish.jpg", datetime(2026, 1, 1, 11, 45)),
+        ("late.jpg", datetime(2026, 1, 1, 18, 0)),
+    ]
+
+    result = frames.subsample_daily(frame_list, at_hour=12.0)
+
+    assert [name for name, _ in result] == ["noonish.jpg"]
+
+
+def test_subsample_daily_keeps_one_frame_per_calendar_date():
+    frame_list = [
+        ("d1-a.jpg", datetime(2026, 1, 1, 8, 0)),
+        ("d1-b.jpg", datetime(2026, 1, 1, 12, 0)),
+        ("d2-a.jpg", datetime(2026, 1, 2, 12, 0)),
+    ]
+
+    result = frames.subsample_daily(frame_list, at_hour=12.0)
+
+    assert [name for name, _ in result] == ["d1-b.jpg", "d2-a.jpg"]
+
+
+def test_subsample_daily_orders_output_by_date():
+    frame_list = [
+        ("later.jpg", datetime(2026, 1, 5, 12, 0)),
+        ("earlier.jpg", datetime(2026, 1, 1, 12, 0)),
+    ]
+
+    result = frames.subsample_daily(frame_list, at_hour=12.0)
+
+    assert [name for name, _ in result] == ["earlier.jpg", "later.jpg"]
+
+
+def test_subsample_daily_breaks_ties_toward_the_earlier_frame():
+    # 10:00 and 14:00 are both 2h from noon -- the earlier one wins.
+    frame_list = [
+        ("morning.jpg", datetime(2026, 1, 1, 10, 0)),
+        ("afternoon.jpg", datetime(2026, 1, 1, 14, 0)),
+    ]
+
+    result = frames.subsample_daily(frame_list, at_hour=12.0)
+
+    assert [name for name, _ in result] == ["morning.jpg"]
+
+
+def test_subsample_daily_empty_list_returns_empty():
+    assert frames.subsample_daily([], at_hour=12.0) == []
+
+
 def test_uniform_durations_gives_every_frame_equal_time():
     result = frames.uniform_durations(["a", "b", "c", "d"], fps=25)
 
