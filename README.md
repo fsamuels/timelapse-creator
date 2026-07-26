@@ -51,14 +51,13 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   preserving today's behavior), fetches each cam, skips failures/stale frames, saves new ones, and
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
-- `web/generate.py` — regenerates a single static status page (health/status table per cam,
-  each cam name linked to its live image, plus per-cam and total disk usage, a projected
-  daily disk burn rate extrapolated from today's capture rate so far, + a GitHub-style
-  activity heatmap with tap-friendly tooltips (day counts show in a line below the grid, not
-  just an unreachable-on-mobile hover title), + a per-cam thumbnail linking to the full-size
-  frame, + a Dark/Light/System theme picker defaulting to dark) from the archive filenames
-  and the capture log; also symlinks the raw archive in next to the page so it's directly
-  browsable
+- `web/generate.py` — regenerates a single static status page (mobile-friendly card layout,
+  dark-only, grouped by site): disk-free/runway stat tiles up top, a per-cam card with its
+  live thumbnail linked to the full-size frame, health status pill, avg frame size/frame
+  count/disk usage, and a 14-day recent-activity strip, plus a "full history" link opening a
+  GitHub-style multi-month contribution grid per cam as a bottom-sheet — implemented with CSS
+  `:target`, no `<script>` tag) from the archive filenames and the capture log; also symlinks
+  the raw archive in next to the page so it's directly browsable
 - `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback
