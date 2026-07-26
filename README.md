@@ -4,13 +4,16 @@ Tools for building timelapse videos from the [Ski Bluewood webcams](https://blue
 (Dayton, WA) — and eventually any public webcam.
 
 **Status: capture pipeline is live on the Pi.** A Raspberry Pi Zero W (hostname
-`timelapse-pi`) is deployed and capturing all six cams (the two Bluewood cams, two Seattle
-dev cams, and two North Carolina cams) on a systemd timer, with a home-network status page
-live at `http://timelapse-pi.local:8080/`. GitHub Actions no longer captures on a schedule —
+`timelapse-pi`) is deployed and capturing four cams (the two Bluewood cams and two Seattle
+dev cams) on a systemd timer, with a home-network status page live at
+`http://timelapse-pi.local:8080/`. The two North Carolina cams are configured but
+commented out in `capture/config.pi.yaml` as of 2026-07-25, pending the SD card migration
+(`docs/sd-card-migration.md`) — re-enable them once the Pi is on the 64GB card. GitHub
+Actions no longer captures on a schedule —
 the earlier Bluewood-only cron job has been retired now that the Pi hand-off trial is
 complete (see `docs/open-questions.md` #1); `workflow_dispatch` remains as a manual
 emergency-capture fallback. The video builder (turning frames into an mp4) now has a first
-pass built — see `video/` below.
+pass built, plus daily-clip and season-video presets on top of it — see `video/` below.
 
 ## The idea
 
@@ -41,10 +44,11 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by the
   `workflow_dispatch` manual emergency-capture fallback in GitHub Actions; not on a schedule
   anymore)
-- `capture/config.pi.yaml` — the Pi's config: all six cams (two Seattle KING 5 cams, added
-  to keep developing the pipeline while Bluewood was off-grid; the two Bluewood cams for
-  the hand-off trial; and two North Carolina cams — WLOS-hosted PNG snapshots of the UNCA
-  tower and the Nantahala Outdoor Center, Pi-only), plus a `capture_log` path
+- `capture/config.pi.yaml` — the Pi's config: two Seattle KING 5 cams, added to keep
+  developing the pipeline while Bluewood was off-grid, and the two Bluewood cams for the
+  hand-off trial, plus a `capture_log` path. Two North Carolina cams — WLOS-hosted PNG
+  snapshots of the UNCA tower and the Nantahala Outdoor Center, Pi-only — are defined but
+  commented out pending the SD card migration (`docs/sd-card-migration.md`)
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
 - `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
@@ -52,12 +56,14 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
 - `web/generate.py` — regenerates a single static status page (mobile-friendly card layout,
-  dark-only, grouped by site): disk-free/runway stat tiles up top, a per-cam card with its
-  live thumbnail linked to the full-size frame, health status pill, avg frame size/frame
-  count/disk usage, and a 14-day recent-activity strip, plus a "full history" link opening a
-  GitHub-style multi-month contribution grid per cam as a bottom-sheet — implemented with CSS
-  `:target`, no `<script>` tag) from the archive filenames and the capture log; also symlinks
-  the raw archive in next to the page so it's directly browsable
+  dark-only, grouped by site): disk-free/runway stat tiles up top (runway estimates days of
+  free space left at today's projected burn rate), a per-cam card with its live thumbnail
+  linked to the full-size frame, health status pill, avg frame size/frame count/disk usage,
+  and a 14-day recent-activity strip with tap-friendly tooltips (day counts show in a line
+  below the strip, not just an unreachable-on-mobile hover title), plus a "full history" link
+  opening a GitHub-style multi-month contribution grid per cam as a bottom-sheet —
+  implemented with CSS `:target`, no `<script>` tag — from the archive filenames and the
+  capture log; also symlinks the raw archive in next to the page so it's directly browsable
 - `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback
@@ -137,15 +143,19 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   <input-dir> -o output/out.mp4 [--fps N | --proportional --duration N] [--from YYYY-MM-DD]
   [--to YYYY-MM-DD] [--drop-dark] [--dedupe] [--label-date] [--label-filename]
   [--white-balance --white-balance-patch T,L,B,R --white-balance-target path]`. Outage gaps
-  are skipped silently, no timestamp overlay. Daily-clip/season-video presets and a
-  subsampling stage are documented follow-ons, not built.
+  are skipped silently, no timestamp overlay. Two presets are built on top of the same
+  `frames.py`/`encode.py` machinery: `video/daily_clip.py` (one day's clip from a cam
+  directory, defaulting to yesterday (Pacific) with dark/night frames dropped, so it's
+  runnable unattended: `python -m video.daily_clip archive/bluewood/summit -o
+  daily/bluewood/summit [--date YYYY-MM-DD]`) and `video/season_video.py` (subsamples a cam
+  directory to one frame/day, closest to `--at-hour` (default noon), then encodes the whole
+  range as one video: `python -m video.season_video archive/bluewood/summit -o season.mp4
+  [--fps N | --proportional --duration N]`).
 - `output/` — build artifacts: `normalize/`'s aligned-frame batches and `video/`'s rendered
   mp4s. Gitignored and regeneratable from `archive/`, not source.
 
 ## Not implemented yet
 
-- Daily-clip / season-video presets and subsampling on top of the video builder — the
-  on-demand CLI (`video/`) is built; these are follow-ons on the same machinery
 - Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
   in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
 - SD card migration (4GB → 64GB) — process is documented
@@ -176,8 +186,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   webcam archive directory or a `normalize/` output directory, with uniform-fps and
   proportional (time-accurate) duration modes, optional dark-frame/dedupe filters, and an
   ffmpeg concat-demuxer H.264 encode. Outage gaps are skipped silently, no timestamp overlay
-  (see `docs/open-questions.md` #3/#4).
+  (see `docs/open-questions.md` #3/#4). Daily-clip and season-video presets are **built** on
+  top of the same machinery (`video/daily_clip.py`, `video/season_video.py`).
 
-Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): daily-clip and
-season-video presets on top of the video builder, and which bucket provider to use for frame
-backup.
+Still genuinely open — see [docs/open-questions.md](docs/open-questions.md): which bucket
+provider to use for frame backup.

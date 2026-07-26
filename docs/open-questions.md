@@ -86,14 +86,16 @@ Not mutually exclusive — the first two are presets of the third.
 - **On-demand date ranges** ✅ built — `python -m video.main <dir> --from ... --to ... -o out.mp4`.
   Both a fixed-cadence webcam archive directory and a normalize/align.py output directory
   work as `<dir>`; see `docs/design.md` Component 2.
-- **Daily clips** — a short sunrise-to-sunset clip per day, auto-generated each night. **Not
-  built** — a preset on top of the same `video/frames.py`/`video/encode.py` machinery.
-- **Season-long video** — snow accumulating and melting over the whole winter. **Not
-  built** — same, plus a subsampling stage (e.g. "one frame per day at noon") that doesn't
-  exist yet.
+- **Daily clips** ✅ built — `python -m video.daily_clip <cam-dir> -o <output-dir> [--date
+  YYYY-MM-DD]`. Defaults to yesterday (Pacific) with dark/night frames dropped, so it's
+  runnable unattended each night with no arguments — see `docs/design.md` Component 2.
+- **Season-long video** ✅ built — `python -m video.season_video <cam-dir> -o out.mp4
+  [--fps N | --proportional --duration N]`. Subsamples to one frame/day (closest to
+  `--at-hour`, default noon) via the new `frames.subsample_daily`, so snow accumulating and
+  melting over the whole winter plays back at a watchable length.
 
-**Decided and built:** the on-demand CLI is the core; daily/season presets remain a
-follow-on, not needed until the on-demand path proves out.
+**Decided and built:** the on-demand CLI is the core, and the daily-clip/season-video presets
+are now built on top of it.
 
 A second, new capability landed alongside the on-demand CLI, not originally scoped by this
 question: **proportional (time-accurate) duration** — `--proportional --duration N` holds
@@ -303,6 +305,14 @@ The status page picks these up with no code changes — `web/generate.py` derive
 list from whatever's actually in `archive_dir`, and cam URLs from the config, so a new site
 just appears once the Pi captures its first frame.
 
+**Update, 2026-07-25:** both cams' entries in `capture/config.pi.yaml` are commented out
+(not deleted) until the SD card migration (question 11) actually happens — no time yet to
+do the migration, and these two were the heaviest contributors to disk pressure. Their
+archived frames stay in `archive/north-carolina/` and the status page still shows them
+(now flagged stale, since nothing configured means no interval to judge freshness against —
+see `stale_after_for` in `web/generate.py`). Re-enable by uncommenting once question 11 is
+done.
+
 ## 11. SD card capacity migration (documented, not yet executed)
 
 The Pi currently boots from a **4GB** microSD card. Two things are now squeezing it:
@@ -361,8 +371,10 @@ than relying on the estimate above.
 - [x] Build the video builder (`docs/design.md` Component 2) — `video/` (`frames.py`,
       `encode.py`, `main.py`): on-demand CLI over either a webcam archive directory or a
       normalize/align.py output directory, uniform-fps and proportional-duration timing
-      modes, optional dark-frame/dedupe filters, ffmpeg concat-demuxer H.264 encode. Daily/
-      season presets and a subsampling stage remain follow-ons.
+      modes, optional dark-frame/dedupe filters, ffmpeg concat-demuxer H.264 encode.
+- [x] Daily-clip / season-video presets (question 3) — `video/daily_clip.py` and
+      `video/season_video.py`, plus a new `frames.subsample_daily` (one frame/day) for the
+      season preset.
 - [x] Decide output format (question 3) and gap-handling-in-video (question 4) — on-demand
       CLI is the core (presets deferred); gaps are skipped silently, no timestamp overlay.
 - [x] Lock `main` down with branch protection requiring PRs for everyone, no bypass, plus
