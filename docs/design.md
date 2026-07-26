@@ -281,44 +281,60 @@ downloaded per day.
   `save_frame`'s naming) for the timestamps. This matches the data's own cadence (it only
   changes every 15 minutes) and the project's batch-job shape rather than adding an
   always-on service to a single-core, 512MB Pi Zero W.
-- **Theme:** a Dark/Light/System dropdown, defaulting to dark on every load (an inline
-  `onchange` attribute flips a `data-theme` attribute on `<html>`, no `<script>` tag,
-  matching the "no external assets" self-contained requirement enforced by
-  `tests/test_generate.py`). System still tracks `prefers-color-scheme` if picked. No
-  persistence — deliberately, since the page already reloads from scratch every 15 minutes.
+- **Redesigned (2026-07)** as a mobile-friendly, dark-only card layout (design handoff:
+  `reference.html`, a static prototype recreated in `web/generate.py`'s own
+  string-templated HTML — no frontend framework introduced, matching the project's existing
+  no-build-step approach). The old health table + full-width heatmap-per-cam layout was
+  replaced by stat tiles + grouped cam cards; see below. No Dark/Light/System picker
+  anymore — the reference design is dark-only, and the theme switcher (along with the
+  Google Fonts–hosted JetBrains Mono the reference specified) was dropped in favor of a
+  self-hosted monospace font stack, preserving the "no external assets" self-contained
+  requirement enforced by `tests/test_generate.py`.
 - **Regeneration:** the capture service runs it as an `ExecStartPost` after each capture,
   so the page refreshes every run. Because the generator reads `archive_dir` from the
   config, it shows exactly the frames in that directory — on the Pi, only Pi-captured
   frames (the "Pi-era only" activity scope), with no source-era filtering logic of its own.
-- **Activity heatmap:** derived directly from archive filenames — no new data source needed.
-  One contribution-style grid per cam, grouped under its site. Each cell's tooltip reads
-  "N images on YYYY-MM-DD" (count leads, date follows). The `title` attribute alone only
-  shows on hover, which touch screens have no way to trigger, so each day cell also carries
-  an inline `onclick` (no `<script>` tag, keeping the "no external assets" self-contained
-  requirement) that copies the same text into a small line under the grid — a tap on mobile
-  reveals it the same way a mouse hover does on desktop.
-- **Thumbnail:** the per-cam block shows the newest frame to the right of its heatmap — an
-  `<img>` reading straight from the `archive/` symlink, no copy step, wrapped in a link to
-  that same full-size file so a click/tap opens it at full resolution instead of just the
-  cropped 108px-tall preview. Chosen over the status table (already the densest part of the
-  page); placing it beside the heatmap grid is safe because that grid is fixed at 13 weeks
-  regardless of archive size, so it never actually grows.
-- **Health/status view:** last frame per cam, how long ago, a staleness flag, the last-run
-  outcome, and per-cam + total disk usage (`shutil.disk_usage` on `archive_dir`). Each cam's
-  stale threshold is `STALE_MULTIPLIER` (2) × its own configured `interval_minutes` — not a
-  single global cutoff — since cams can run on different cadences (see Component 1's
-  per-cam interval note). A cam with archived frames but no entry in the current config
-  (decommissioned) always reads as stale rather than guessing an interval for it. The
-  outcome needs the persisted `capture.log` from Component 1 — status can't be derived from
-  successful frames alone, since a stuck/failing cam produces *no* new archive entries.
-- **Burn rate:** shown next to the disk-usage line at the top of the page — sums every cam's
-  bytes captured so far today and projects a full day from the elapsed hours since midnight
+- **Stat tiles:** "Disk free" (with a used-space progress bar) and "Runway" (an estimated
+  days-of-space-left figure, `disk_free_bytes / projected_daily_bytes`, flagged in warning
+  red at or below `RUNWAY_WARN_DAYS`, currently 14). "Runway" reads "steady" rather than a
+  number when there's no burn-rate data yet, instead of dividing by zero or fabricating a
+  figure.
+- **Cam cards, grouped by site:** each card shows the live thumbnail with a status pill
+  (`LIVE`/`STALE`) and last-frame time overlaid, then avg frame size / frame count / disk
+  usage, then a 14-day recent-activity strip (a quieter, lower-detail cousin of the full
+  heatmap — see below) and a "full history →" link. A group header shows a stale-count
+  badge when any of its cams are stale (hidden otherwise). An optional, off-by-default
+  `web_show_stale_banner: true` config key additionally surfaces an amber "N of M cams
+  stale" banner at the top of the page — off by default because some cams are intentionally
+  disabled for stretches and the team didn't want that flagged on every visit.
+- **Full-history modal:** "full history →" opens a bottom-sheet with the same 13-week
+  GitHub-style contribution grid the old design showed inline, now per-cam and hidden until
+  opened. Built with **CSS `:target`** (a `<a href="#history-{cam}">` / `#history-{cam}"`
+  overlay pair) rather than JavaScript, keeping the page's "no `<script>` tag" constraint —
+  each cam's grid is pre-rendered server-side into its own hidden overlay `<div>`, so there's
+  no client-side calendar logic to duplicate. The close link/scrim both point at `href="#!"`
+  rather than `href="#"` — a bare `#` also targets the document top and yanks the page's
+  scroll position, which `#!` (matching no element) avoids.
+- **Activity leveling:** both the 14-day strip and the full-history grid use the same
+  `_level()` bucketing, now a simple off/low/high (3-color) scale rather than the old
+  5-color one — visually quieter, matching the reference's intent for the strip to read as
+  secondary information, not a primary alert.
+- **Health/status:** last frame per cam, how long ago, and a staleness flag drive the
+  `LIVE`/`STALE` pill and card border. Each cam's stale threshold is `STALE_MULTIPLIER` (2)
+  × its own configured `interval_minutes` — not a single global cutoff — since cams can run
+  on different cadences (see Component 1's per-cam interval note). A cam with archived
+  frames but no entry in the current config (decommissioned) always reads as stale rather
+  than guessing an interval for it. Status needs the persisted `capture.log` from
+  Component 1 — it can't be derived from successful frames alone, since a stuck/failing cam
+  produces *no* new archive entries.
+- **Burn rate:** feeds the "Runway" stat tile — sums every cam's bytes captured so far today
+  and projects a full day from the elapsed hours since midnight
   (`bytes_today / elapsed_hours * 24`). Suppressed for the first 15 minutes of the day, where
   a single frame divided by a near-zero elapsed time would spike to a meaningless number;
   `None` in that window (and whenever there are no frames at all) rather than a misleading
   figure.
-- **Browsing the archive:** each cam name links to its live image, and the generator
-  symlinks `www/archive` to `archive_dir` on every run so the full frame archive is
+- **Browsing the archive:** each cam's overlaid name links to its live image, and the
+  generator symlinks `www/archive` to `archive_dir` on every run so the full frame archive is
   reachable as a plain directory listing at `/archive/` — no copying, and no new serving
   code (`http.server` follows the symlink). Same home-network/no-auth trust model as the
   rest of the page; see `docs/open-questions.md` #8. A proper gallery view (paginated by

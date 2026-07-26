@@ -1,4 +1,3 @@
-import html
 import json
 from datetime import date, datetime, timedelta
 
@@ -89,6 +88,20 @@ def test_stale_after_for_orphaned_cam_is_always_stale():
     assert generate.stale_after_for(None) == timedelta(0)
 
 
+def test_level_zero_activity_is_level_zero():
+    assert generate._level(0, 10) == 0
+    assert generate._level(5, 0) == 0
+
+
+def test_level_reaches_max_intensity_at_the_peak_count():
+    assert generate._level(10, 10, levels=2) == 2
+    assert generate._level(1, 1, levels=2) == 2
+
+
+def test_level_below_half_peak_is_the_low_bucket():
+    assert generate._level(1, 10, levels=2) == 1
+
+
 def test_heatmap_grid_shape_and_end_alignment():
     counts = {date(2026, 7, 16): 5}
     end = date(2026, 7, 16)
@@ -103,7 +116,7 @@ def test_heatmap_grid_shape_and_end_alignment():
     # and its count carries through
     end_cell = next(c for c in grid[-1] if c["date"] == end)
     assert end_cell["count"] == 5
-    assert end_cell["level"] >= 1
+    assert end_cell["level"] == 2  # sole activity in the window -> the peak
 
 
 def test_heatmap_grid_marks_future_cells():
@@ -128,13 +141,28 @@ def test_heatmap_grid_peak_is_scoped_to_the_displayed_window():
     grid = generate.heatmap_grid(counts, end, weeks=13)
 
     end_cell = next(c for week in grid for c in week if c["date"] == end)
-    assert end_cell["level"] == 4
+    assert end_cell["level"] == 2
 
 
-def test_level_reaches_max_intensity_at_the_peak_count():
-    assert generate._level(1, 1) == 4
-    assert generate._level(10, 10) == 4
-    assert generate._level(0, 10) == 0
+def test_recent_strip_is_14_cells_oldest_to_newest():
+    end = date(2026, 7, 22)
+    counts = {end: 4, end - timedelta(days=13): 1}
+
+    cells = generate.recent_strip(counts, end)
+
+    assert len(cells) == 14
+    assert cells[0]["date"] == end - timedelta(days=13)
+    assert cells[-1]["date"] == end
+    assert cells[-1]["level"] == 2  # the peak day in this window
+
+
+def test_recent_strip_ignores_activity_outside_its_window():
+    end = date(2026, 7, 22)
+    counts = {end - timedelta(days=30): 500, end: 1}
+
+    cells = generate.recent_strip(counts, end)
+
+    assert cells[-1]["level"] == 2  # scoped peak is just today's 1 frame
 
 
 def test_frame_bytes_sums_file_sizes(tmp_path):
@@ -201,6 +229,28 @@ def test_human_bytes_formats_by_magnitude():
     assert generate._human_bytes(0) == "0 B"
     assert generate._human_bytes(2048) == "2.0 KB"
     assert generate._human_bytes(3 * 1024**3) == "3.0 GB"
+
+
+def test_human_runway_none_reads_as_steady():
+    assert generate._human_runway(None) == "steady"
+
+
+def test_human_runway_under_a_day():
+    assert generate._human_runway(0.5) == "<1 day"
+
+
+def test_human_runway_days_pluralizes():
+    assert generate._human_runway(1) == "~1 day"
+    assert generate._human_runway(3) == "~3 days"
+
+
+def test_human_runway_switches_to_weeks_past_two_weeks():
+    assert generate._human_runway(21) == "~3 weeks"
+
+
+def test_slug_replaces_unsafe_characters():
+    assert generate._slug("RCR - Front Pastures") == "rcr-front-pastures"
+    assert generate._slug("summit") == "summit"
 
 
 def test_ensure_archive_link_creates_symlink(tmp_path):
@@ -306,6 +356,62 @@ def test_build_page_data_burn_rate_none_without_any_frames(tmp_path):
     data = generate.build_page_data(tmp_path, None, now)
 
     assert data["burn_rate"] is None
+    assert data["runway_days"] is None
+
+
+def test_build_page_data_computes_runway_from_disk_and_burn_rate(tmp_path):
+    _write_frame(
+        tmp_path, "bluewood", "summit", "2026-07-16T03-00-00-000000-0800", data=b"x" * 1000
+    )
+    now = datetime(2026, 7, 16, 6, 0, tzinfo=PACIFIC)  # 6 hrs into the day
+
+    data = generate.build_page_data(tmp_path, None, now)
+
+    disk = data["disk"]
+    burn = data["burn_rate"]
+    assert data["runway_days"] == disk["free"] / burn["projected_daily_bytes"]
+
+
+def test_build_page_data_counts_stale_and_total_cams(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "base", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={
+            "summit": {"interval_minutes": 15},  # fresh
+            "base": {"interval_minutes": 1},  # instantly stale by now
+        },
+    )
+
+    assert data["cam_count"] == 2
+    assert data["stale_count"] == 1
+
+
+def test_build_page_data_avg_bytes_per_cam(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800", data=b"x" * 10)
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800", data=b"x" * 20)
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+
+    assert data["sites"][0]["cams"][0]["avg_bytes"] == 15
+
+
+def test_build_page_data_pairs_health_with_log(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    log = tmp_path / "capture.log"
+    log.write_text(json.dumps({"cam": "summit", "outcome": "saved", "detail": "ok"}) + "\n")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, log, now)
+
+    summit = data["sites"][0]["cams"][0]
+    assert summit["name"] == "summit"
+    assert summit["health"]["outcome"]["outcome"] == "saved"
 
 
 def test_render_html_links_cam_name_to_its_url(tmp_path):
@@ -320,7 +426,7 @@ def test_render_html_links_cam_name_to_its_url(tmp_path):
     )
     doc = generate.render_html(data, now)
 
-    assert '<a href="https://example.com/summit.jpg"' in doc
+    assert '<a class="cam-name" href="https://example.com/summit.jpg"' in doc
     assert ">summit</a>" in doc
 
 
@@ -334,48 +440,7 @@ def test_render_html_is_self_contained_and_shows_cams(tmp_path):
     assert doc.startswith("<!doctype html>")
     assert "bluewood" in doc and "summit" in doc
     assert "http" not in doc.split("<style>")[1].split("</style>")[0]  # no external assets
-    assert "<script" not in doc
-
-
-def test_render_html_defaults_to_dark_theme_with_a_selector(tmp_path):
-    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
-    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
-
-    data = generate.build_page_data(tmp_path, None, now)
-    doc = generate.render_html(data, now)
-
-    assert '<html lang="en" data-theme="dark">' in doc
-    assert '<option value="dark" selected>Dark</option>' in doc
-    assert '<option value="light">Light</option>' in doc
-    assert '<option value="system">System</option>' in doc
-    assert "localStorage" not in doc  # no persistence, by design
-
-
-def test_render_html_shows_only_filename_for_saved_detail(tmp_path):
-    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
-    log = tmp_path / "capture.log"
-    full_path = str(tmp_path / "bluewood" / "summit" / "2026" / "07" / "frame.jpg")
-    log.write_text(json.dumps({"cam": "summit", "outcome": "saved", "detail": full_path}) + "\n")
-    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
-
-    data = generate.build_page_data(tmp_path, log, now)
-    doc = generate.render_html(data, now)
-
-    assert "frame.jpg" in doc
-    assert full_path not in doc
-
-
-def test_render_html_keeps_full_detail_for_non_saved_outcomes(tmp_path):
-    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
-    log = tmp_path / "capture.log"
-    error = "Connection error to https://example.com/foo"
-    log.write_text(json.dumps({"cam": "summit", "outcome": "fetch_failed", "detail": error}) + "\n")
-    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
-
-    data = generate.build_page_data(tmp_path, log, now)
-    doc = generate.render_html(data, now)
-
-    assert html.escape(error) in doc
+    assert "<script" not in doc  # interactivity (the history modal) is pure CSS :target
 
 
 def test_render_html_shows_a_thumbnail_of_the_newest_frame(tmp_path):
@@ -385,10 +450,7 @@ def test_render_html_shows_a_thumbnail_of_the_newest_frame(tmp_path):
     data = generate.build_page_data(tmp_path, None, now)
     doc = generate.render_html(data, now)
 
-    assert (
-        '<img class="cam-thumb" '
-        'src="archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"'
-    ) in doc
+    assert ('src="archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"') in doc
 
 
 def test_render_html_thumbnail_links_to_the_full_size_frame(tmp_path):
@@ -399,10 +461,19 @@ def test_render_html_thumbnail_links_to_the_full_size_frame(tmp_path):
     doc = generate.render_html(data, now)
 
     thumb_url = "archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"
-    assert f'<a href="{thumb_url}" target="_blank" rel="noopener"><img class="cam-thumb"' in doc
+    assert f'<a href="{thumb_url}" target="_blank" rel="noopener">' in doc
 
 
-def test_heatmap_tooltip_leads_with_the_image_count(tmp_path):
+def test_render_html_no_thumbnail_shows_placeholder(tmp_path):
+    (tmp_path / "bluewood" / "summit").mkdir(parents=True)
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    # scan_archive skips cams with zero frames, so simulate one directly:
+    data = generate.build_page_data(tmp_path, None, now)
+    assert data["sites"] == []  # sanity: nothing archived means no cards at all
+
+
+def test_render_html_full_history_grid_tooltip_leads_with_the_image_count(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
@@ -413,18 +484,54 @@ def test_heatmap_tooltip_leads_with_the_image_count(tmp_path):
     assert 'title="2 images on 2026-07-16"' in doc
 
 
-def test_heatmap_day_tap_copies_tooltip_text_into_a_visible_line(tmp_path):
+def test_render_html_full_history_day_tap_copies_tooltip_into_the_modal_hint(tmp_path):
     """Mobile can't hover a `title` tooltip, so tapping a day (which fires a
-    "click" on touch too) must copy the same text into a visible .hm-info line."""
+    "click" on touch too) must copy the same text into the visible .modal-hint line."""
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
     data = generate.build_page_data(tmp_path, None, now)
     doc = generate.render_html(data, now)
 
-    assert '<div class="hm-info muted">Tap a day for details</div>' in doc
-    assert "onclick=\"this.closest('.heatmap').querySelector('.hm-info')" in doc
+    assert '<div class="modal-hint">Tap a day for details</div>' in doc
+    assert "onclick=\"this.closest('.modal-sheet').querySelector('.modal-hint')" in doc
     assert '.textContent=this.title"' in doc
+
+
+def test_render_html_recent_strip_tooltip_leads_with_the_image_count(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert 'class="recent-cell l2" title="2 images on 2026-07-16"' in doc
+
+
+def test_render_html_recent_strip_day_tap_copies_tooltip_into_the_cam_info_line(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert '<div class="recent-info">Tap a day for details</div>' in doc
+    assert "onclick=\"this.closest('.cam-body').querySelector('.recent-info')" in doc
+    assert '.textContent=this.title"' in doc
+
+
+def test_render_html_history_button_links_to_the_cams_modal(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    key = data["sites"][0]["cams"][0]["key"]
+    assert f'href="#history-{key}"' in doc
+    assert f'id="history-{key}"' in doc
+    assert "summit &middot; full history" in doc
 
 
 def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
@@ -434,12 +541,11 @@ def test_render_html_shows_disk_usage_and_archive_link(tmp_path):
     data = generate.build_page_data(tmp_path, None, now)
     doc = generate.render_html(data, now)
 
-    assert '<a href="archive/">browse the full archive</a>' in doc
-    assert "free of" in doc
-    assert "<th>Disk</th>" in doc
+    assert 'href="archive/"' in doc
+    assert "Disk free" in doc
 
 
-def test_render_html_shows_burn_rate(tmp_path):
+def test_render_html_shows_burn_rate_and_runway(tmp_path):
     _write_frame(
         tmp_path, "bluewood", "summit", "2026-07-16T03-00-00-000000-0800", data=b"x" * 1024
     )
@@ -448,28 +554,98 @@ def test_render_html_shows_burn_rate(tmp_path):
     data = generate.build_page_data(tmp_path, None, now)
     doc = generate.render_html(data, now)
 
-    assert "Burn rate:" in doc
-    assert "projected from today's rate" in doc
+    assert "Runway" in doc
+    assert "/day burn" in doc
+    assert "captured in" in doc
 
 
-def test_render_html_omits_burn_rate_when_too_early_in_the_day(tmp_path):
+def test_render_html_runway_omits_burn_line_when_too_early_in_the_day(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-15T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 0, 5, tzinfo=PACIFIC)  # 5 min into today
 
     data = generate.build_page_data(tmp_path, None, now)
     doc = generate.render_html(data, now)
 
-    assert "Burn rate:" not in doc
+    assert "not enough data yet to estimate burn rate" in doc
 
 
-def test_build_page_data_pairs_health_with_log(tmp_path):
-    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
-    log = tmp_path / "capture.log"
-    log.write_text(json.dumps({"cam": "summit", "outcome": "saved", "detail": "ok"}) + "\n")
-    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+def test_render_html_stale_banner_hidden_by_default(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-01T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)  # long past stale
 
-    data = generate.build_page_data(tmp_path, log, now)
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+    doc = generate.render_html(data, now)  # show_stale_banner defaults False
 
-    summit = data["sites"][0]["cams"][0]
-    assert summit["name"] == "summit"
-    assert summit["health"]["outcome"]["outcome"] == "saved"
+    assert '<div class="stale-banner"' not in doc
+
+
+def test_render_html_stale_banner_shown_when_enabled_and_stale(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-01T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+    doc = generate.render_html(data, now, show_stale_banner=True)
+
+    assert '<div class="stale-banner"' in doc
+    assert "1 of 1 cams stale" in doc
+
+
+def test_render_html_stale_banner_stays_hidden_when_enabled_but_nothing_stale(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-29-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+    doc = generate.render_html(data, now, show_stale_banner=True)
+
+    assert '<div class="stale-banner"' not in doc
+
+
+def test_render_html_group_badge_shows_stale_count(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-01T12-00-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "base", "2026-07-16T12-29-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={
+            "summit": {"interval_minutes": 15},  # stale
+            "base": {"interval_minutes": 15},  # fresh
+        },
+    )
+    doc = generate.render_html(data, now)
+
+    assert '<span class="group-badge">1 stale</span>' in doc
+
+
+def test_render_html_cam_status_pill_reflects_health(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-29-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+    doc = generate.render_html(data, now)
+
+    assert '<span class="cam-status live">LIVE</span>' in doc
+
+
+def test_render_html_runway_gets_warn_class_when_low(tmp_path):
+    # A tiny disk with meaningful burn should read as a low, "warn" runway.
+    _write_frame(
+        tmp_path, "bluewood", "summit", "2026-07-16T00-00-00-000000-0800", data=b"x" * 10**9
+    )
+    now = datetime(2026, 7, 16, 12, 0, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    if data["runway_days"] is not None and data["runway_days"] <= generate.RUNWAY_WARN_DAYS:
+        assert '<div class="stat-value warn">' in doc

@@ -1,14 +1,11 @@
 """Static status-page generator for timelapse-creator.
 
 Reads the frame archive (via the timestamped filenames) and the persisted capture
-log, then writes a single self-contained HTML page with two views:
-
-  * Health/status — last frame per cam, how long ago, and the last capture-run
-    outcome, so you can tell at a glance whether capture is still working. A cam
-    down for the night looks the same as a broken one from frames alone, which is
-    why this reads the capture log rather than only the archive.
-  * Activity heatmap — a GitHub-style contribution grid of frames captured per
-    day, per cam.
+log, then writes a single self-contained HTML page: a disk/burn-rate summary up
+top, then per-cam cards grouped by site showing the last frame, a recent-activity
+strip, and a link to that cam's full multi-month history (a GitHub-style
+contribution grid, opened as a bottom-sheet "modal" implemented purely with CSS
+``:target`` — no ``<script>`` tag, keeping the page dependency-free).
 
 Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
 so it's directly browsable, and reports per-cam and total disk usage.
@@ -21,6 +18,8 @@ frames) with no source-era filtering logic of its own.
 
 import argparse
 import html
+import math
+import re
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,8 +31,11 @@ from capture.capture_log import latest_outcomes, read_capture_log
 
 CONFIG_PATH = Path(__file__).parent.parent / "capture" / "config.yaml"
 DEFAULT_OUTPUT = "site/index.html"
-HEATMAP_WEEKS = 13  # ~a quarter, the recent-activity window shown per cam
+HEATMAP_WEEKS = 13  # ~a quarter, the full-history window shown per cam
+RECENT_DAYS = 14  # the compact recent-activity strip on each cam card
+HEATMAP_LEVELS = 2  # off / low / high — see _level()
 STALE_MULTIPLIER = 2  # flag a cam stale after this many missed capture intervals
+RUNWAY_WARN_DAYS = 14  # runway at or below this is flagged in warning red
 
 
 def scan_archive(archive_dir):
@@ -126,17 +128,6 @@ def daily_burn_rate(bytes_today, now):
     }
 
 
-def days_until_full(free_bytes, projected_daily_bytes):
-    """Days of free space left at the projected daily burn rate.
-
-    None if there's no meaningful rate to project from (avoids a
-    divide-by-zero / infinite estimate when nothing was captured today).
-    """
-    if not projected_daily_bytes:
-        return None
-    return free_bytes / projected_daily_bytes
-
-
 def daily_counts(frames):
     """Count frames per capture date (a ``{date: int}`` mapping)."""
     counts = {}
@@ -158,14 +149,21 @@ def cam_health(frames, outcome, now, stale_after):
     }
 
 
-def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS):
+def _level(count, peak, levels=HEATMAP_LEVELS):
+    """Bucket ``count`` into ``0..levels`` relative to ``peak`` (0 = no activity)."""
+    if count <= 0 or peak <= 0:
+        return 0
+    return max(1, min(levels, math.ceil(levels * count / peak)))
+
+
+def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS, levels=HEATMAP_LEVELS):
     """Build a GitHub-style grid: a list of weeks, each a list of 7 day cells.
 
     Weeks run Sunday-first and oldest-first; the last column contains end_date.
-    Each cell is ``{"date", "count", "level", "future"}`` where level is a 0-4
-    intensity bucket relative to the busiest day in the window and future cells
-    (dates after end_date, padding out the final week) are marked so the page
-    can render them blank.
+    Each cell is ``{"date", "count", "level", "future"}`` where level is a
+    0..levels intensity bucket relative to the busiest day in the window and
+    future cells (dates after end_date, padding out the final week) are marked
+    so the page can render them blank.
     """
     days_since_sunday = (end_date.weekday() + 1) % 7
     last_week_start = end_date - timedelta(days=days_since_sunday)
@@ -189,7 +187,7 @@ def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS):
                 {
                     "date": day,
                     "count": count,
-                    "level": _level(count, peak),
+                    "level": _level(count, peak, levels),
                     "future": day > end_date,
                 }
             )
@@ -197,10 +195,23 @@ def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS):
     return grid
 
 
-def _level(count, peak):
-    if count == 0 or peak == 0:
-        return 0
-    return min(4, 1 + int(3 * count / peak))
+def recent_strip(counts, end_date, days=RECENT_DAYS, levels=HEATMAP_LEVELS):
+    """Build the compact ``days``-long activity strip shown on each cam card.
+
+    A flat, oldest-to-newest list of ``{"date", "count", "level"}`` cells,
+    leveled the same way as heatmap_grid but scoped to just this window.
+    """
+    start = end_date - timedelta(days=days - 1)
+    peak = max(
+        (count for day, count in counts.items() if start <= day <= end_date),
+        default=0,
+    )
+    cells = []
+    for i in range(days):
+        day = start + timedelta(days=i)
+        count = counts.get(day, 0)
+        cells.append({"date": day, "count": count, "level": _level(count, peak, levels)})
+    return cells
 
 
 def _human_bytes(n):
@@ -210,23 +221,6 @@ def _human_bytes(n):
         if size < 1024 or unit == "TB":
             return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
-
-
-def _human_duration(days):
-    """Render a day count as the largest unit that reads naturally: '18 hours',
-    '6 days', '3.2 months', or '1.4 years' — a fraction of a day (a few hours
-    left on a nearly-full card) shouldn't be reported as '0 days'.
-    """
-    if days < 1:
-        hours = days * 24
-        return f"{hours:.0f} hour{'' if round(hours) == 1 else 's'}"
-    if days < 60:
-        return f"{days:.0f} day{'' if round(days) == 1 else 's'}"
-    if days < 730:
-        months = days / 30.44
-        return f"{months:.1f} month{'' if months == 1 else 's'}"
-    years = days / 365.25
-    return f"{years:.1f} year{'' if years == 1 else 's'}"
 
 
 def _human_ago(delta):
@@ -240,6 +234,28 @@ def _human_ago(delta):
     if hours < 48:
         return f"{hours} hr ago"
     return f"{hours // 24} days ago"
+
+
+def _human_runway(days):
+    """Render an estimated days-of-disk-space-left figure like '~3 days'.
+
+    None (no burn rate yet, or burn rate is zero) reads as "steady" rather
+    than a fabricated number.
+    """
+    if days is None:
+        return "steady"
+    if days < 1:
+        return "<1 day"
+    if days < 14:
+        n = round(days)
+        return f"~{n} day" + ("" if n == 1 else "s")
+    n = round(days / 7)
+    return f"~{n} week" + ("" if n == 1 else "s")
+
+
+def _slug(text):
+    """Turn an arbitrary site/cam name into a safe HTML id/URL-fragment."""
+    return re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
 
 
 def stale_after_for(cam_cfg):
@@ -264,8 +280,8 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
     with ``url`` and ``interval_minutes``), used to link each cam's name to
     its live image and to size its stale threshold.
 
-    Returns ``{"sites": [...], "disk": {"total", "used", "free"} or None,
-    "burn_rate": {"bytes_today", "elapsed_hours", "projected_daily_bytes"} or None}``.
+    Returns ``{"sites": [...], "disk": {...} or None, "burn_rate": {...} or
+    None, "runway_days": float or None, "stale_count": int, "cam_count": int}``.
     """
     archive_dir = Path(archive_dir)
     sites = scan_archive(archive_dir)
@@ -275,298 +291,377 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
 
     site_views = []
     bytes_today = 0
+    stale_count = 0
+    cam_count = 0
     for site, cams in sites.items():
         cam_views = []
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
             bytes_today += bytes_captured_on(frames, today)
+            counts = daily_counts(frames)
+            health = cam_health(frames, outcomes.get(cam), now, stale_after_for(cam_cfg))
+            cam_count += 1
+            if health["is_stale"]:
+                stale_count += 1
             cam_bytes = frame_bytes(frames)
             cam_views.append(
                 {
                     "name": cam,
+                    "key": f"{_slug(site)}--{_slug(cam)}",
                     "url": (cam_cfg or {}).get("url"),
-                    "health": cam_health(frames, outcomes.get(cam), now, stale_after_for(cam_cfg)),
-                    "grid": heatmap_grid(daily_counts(frames), today),
+                    "health": health,
+                    "recent": recent_strip(counts, today),
+                    "full_grid": heatmap_grid(counts, today),
                     "bytes": cam_bytes,
-                    "avg_bytes": cam_bytes / len(frames) if frames else None,
+                    "avg_bytes": cam_bytes / len(frames) if frames else 0,
                     "thumb_url": thumb_url(frames, archive_dir),
                 }
             )
-        site_views.append({"site": site, "cams": cam_views})
+        site_stale = sum(1 for c in cam_views if c["health"]["is_stale"])
+        site_views.append({"site": site, "cams": cam_views, "stale_count": site_stale})
+
     disk = disk_usage(archive_dir)
     burn_rate = daily_burn_rate(bytes_today, now) if site_views else None
-    if burn_rate and disk:
-        burn_rate["days_until_full"] = days_until_full(
-            disk["free"], burn_rate["projected_daily_bytes"]
-        )
+    runway_days = None
+    if disk and burn_rate and burn_rate["projected_daily_bytes"] > 0:
+        runway_days = disk["free"] / burn_rate["projected_daily_bytes"]
+
     return {
         "sites": site_views,
         "disk": disk,
         "burn_rate": burn_rate,
+        "runway_days": runway_days,
+        "stale_count": stale_count,
+        "cam_count": cam_count,
     }
 
 
 # --- rendering -------------------------------------------------------------
 
-_LIGHT_VARS = """
-    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa;
-    --border: #d0d7de; --ok: #1a7f37; --stale: #9a6700;
-    --l0:#ebedf0; --l1:#bcd7ff; --l2:#7fb0f5; --l3:#3f7fd6; --l4:#1b52a0;
-"""
+_FONT_STACK = (
+    "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace"
+)
 
 _STYLE = f"""
-:root {{
-  --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --card: #161b22;
-  --border: #30363d; --ok: #3fb950; --stale: #d29922;
-  --l0:#161b22; --l1:#0b2c5c; --l2:#15468a; --l3:#2b6cb8; --l4:#4c9aff;
-}}
-:root[data-theme="light"] {{
-{_LIGHT_VARS}}}
-@media (prefers-color-scheme: light) {{
-  :root[data-theme="system"] {{
-{_LIGHT_VARS}  }}
-}}
-* {{ box-sizing: border-box; }}
-body {{ margin: 0; padding: 2rem 1.5rem; background: var(--bg); color: var(--fg);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
-main {{ max-width: 900px; margin: 0 auto; }}
-.top-row {{ display: flex; align-items: baseline; justify-content: space-between;
-  gap: 1rem; flex-wrap: wrap; }}
-h1 {{ font-size: 1.5rem; margin: 0 0 .25rem; }}
-h2 {{ font-size: 1.05rem; margin: 2rem 0 .75rem; }}
-.sub {{ color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }}
-.theme-select {{ color: var(--muted); font-size: .85rem; }}
-.theme-select select {{ font: inherit; color: var(--fg); background: var(--card);
-  border: 1px solid var(--border); border-radius: .35rem; padding: .15rem .4rem;
-  margin-left: .35rem; }}
-table {{ border-collapse: collapse; width: 100%; }}
-th, td {{ text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }}
-th {{ color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase;
-  letter-spacing: .03em; }}
-.badge {{ display: inline-block; padding: .1rem .5rem; border-radius: 2rem; font-size: .8rem;
-  font-weight: 600; }}
-.badge.ok {{ color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }}
-.badge.stale {{ color: var(--stale);
-  background: color-mix(in srgb, var(--stale) 18%, transparent); }}
-.muted {{ color: var(--muted); }}
-.cam-block {{ margin: 1.25rem 0; }}
-.cam-name {{ font-weight: 600; margin-bottom: .4rem; }}
-.cam-row {{ display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }}
-.cam-thumb {{ height: 108px; width: auto; max-width: 160px; object-fit: cover;
-  border-radius: .35rem; border: 1px solid var(--border); background: var(--card);
-  flex: 0 0 auto; }}
-.heatmap {{ overflow-x: auto; padding-bottom: .25rem; min-width: 0; }}
-.hm-grid {{ display: inline-grid;
-  grid-template-columns: 28px repeat({HEATMAP_WEEKS}, 11px);
-  grid-auto-rows: 11px; gap: 3px; align-items: center; }}
-.hm-corner {{ width: 28px; height: 11px; }}
-.hm-month {{ font-size: .7rem; line-height: 11px; color: var(--muted);
-  white-space: nowrap; overflow: visible; }}
-.hm-wd {{ font-size: .7rem; line-height: 11px; color: var(--muted);
-  text-align: right; padding-right: 4px; white-space: nowrap; }}
-.day {{ width: 11px; height: 11px; border-radius: 2px; background: var(--l0); }}
-.day.future {{ background: transparent; }}
-.day.l1 {{ background: var(--l1); }} .day.l2 {{ background: var(--l2); }}
-.day.l3 {{ background: var(--l3); }} .day.l4 {{ background: var(--l4); }}
-.legend {{ display: flex; align-items: center; gap: 4px; color: var(--muted);
-  font-size: .78rem; margin-top: .5rem; }}
-.legend .day {{ display: inline-block; }}
-.hm-info {{ min-height: 1.2em; font-size: .8rem; color: var(--muted); margin-top: .35rem; }}
-footer {{ color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
-  border-top: 1px solid var(--border); padding-top: 1rem; }}
+*{{box-sizing:border-box}}
+body{{margin:0;background:#0b0d10;font-family:{_FONT_STACK};
+  -webkit-font-smoothing:antialiased}}
+a{{text-decoration:none}}
+.wrap{{min-height:100vh;background:#0b0d10;display:flex;justify-content:center}}
+.content{{width:100%;max-width:640px;padding:22px 18px 60px}}
+.header{{display:flex;align-items:flex-start;justify-content:space-between;
+  gap:12px;flex-wrap:wrap}}
+.title{{font:700 20px/1.2 {_FONT_STACK};color:#e8eaed;letter-spacing:-.02em}}
+.subtitle{{font:400 11px/1.4 {_FONT_STACK};color:rgba(255,255,255,.4);margin-top:4px}}
+.archive-link{{font:500 11px {_FONT_STACK};color:#7dd3fc;white-space:nowrap;margin-top:2px}}
+.stale-banner{{margin-top:16px;padding:12px 14px;background:rgba(217,119,6,.12);
+  border:1px solid rgba(217,119,6,.35);border-radius:10px;display:flex;
+  align-items:center;gap:10px}}
+.stale-dot{{width:7px;height:7px;border-radius:50%;background:#f5a524;flex:none}}
+.stale-text{{font:600 12px/1.3 {_FONT_STACK};color:#f5c363}}
+.stats{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}}
+.stat-card{{background:rgba(255,255,255,.04);border-radius:12px;padding:14px 16px}}
+.stat-label{{font:600 10px {_FONT_STACK};color:rgba(255,255,255,.4);
+  letter-spacing:.05em;text-transform:uppercase}}
+.stat-value{{font:700 24px {_FONT_STACK};color:#e8eaed;margin-top:5px}}
+.stat-value.warn{{color:#ff6b6b}}
+.stat-bar{{height:5px;background:rgba(255,255,255,.08);border-radius:3px;
+  margin-top:9px;overflow:hidden}}
+.stat-bar-fill{{height:100%;background:#f5a524}}
+.stat-sub{{font:400 10px {_FONT_STACK};color:rgba(255,255,255,.35);
+  margin-top:6px;line-height:1.5}}
+.group{{margin-top:26px}}
+.group-head{{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:12px}}
+.group-name{{font:600 12px {_FONT_STACK};color:#e8eaed;letter-spacing:.05em;
+  text-transform:uppercase}}
+.group-badge{{font:500 10px {_FONT_STACK};color:#f5a524;
+  background:rgba(245,165,36,.12);padding:2px 8px;border-radius:20px}}
+.cams{{display:flex;flex-direction:column;gap:14px}}
+.cam-card{{border:1px solid rgba(255,255,255,.07);border-radius:16px;
+  overflow:hidden;background:rgba(255,255,255,.02)}}
+.cam-photo{{position:relative;display:block;height:150px;
+  background:repeating-linear-gradient(45deg,#1a1d22,#1a1d22 8px,#22262c 8px,#22262c 16px)}}
+.cam-photo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}
+.cam-photo-label{{position:absolute;top:10px;left:12px;font:500 9px {_FONT_STACK};
+  color:rgba(255,255,255,.25);letter-spacing:.05em}}
+.cam-photo-gradient{{position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,.82),transparent 60%)}}
+.cam-photo-overlay{{position:absolute;left:14px;right:14px;bottom:10px;display:flex;
+  align-items:flex-end;justify-content:space-between;gap:8px}}
+.cam-name{{font:700 16px {_FONT_STACK};color:#fff}}
+.cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.65);margin-top:2px}}
+.cam-status{{font:600 9.5px {_FONT_STACK};padding:3px 9px;border-radius:20px;flex:none}}
+.cam-status.stale{{color:#2a1a0e;background:#f5a524}}
+.cam-status.live{{color:#0a2e12;background:#3fb950}}
+.cam-body{{padding:12px 14px 14px}}
+.cam-meta{{display:flex;gap:14px;flex-wrap:wrap;font:400 10.5px {_FONT_STACK};
+  color:rgba(255,255,255,.45)}}
+.cam-heatmap-row{{display:flex;align-items:center;justify-content:space-between;
+  margin-top:10px;gap:10px}}
+.recent-strip{{display:grid;grid-template-columns:repeat({RECENT_DAYS},8px);
+  gap:1px;opacity:.85}}
+.recent-cell{{width:8px;height:8px;border-radius:1px;background:rgba(255,255,255,.06);
+  cursor:pointer}}
+.recent-cell.l1{{background:#1e3a8a}}
+.recent-cell.l2{{background:#3b82f6}}
+.recent-info{{min-height:1.2em;font:400 10px {_FONT_STACK};color:rgba(255,255,255,.35);
+  margin-top:6px}}
+.history-btn{{border:none;background:none;font:500 10.5px {_FONT_STACK};color:#7dd3fc;
+  cursor:pointer;white-space:nowrap;padding:0}}
+.modal-overlay{{position:fixed;inset:0;display:none;z-index:50}}
+.modal-overlay:target{{display:block}}
+.modal-scrim{{position:absolute;inset:0;background:rgba(0,0,0,.7)}}
+.modal-sheet{{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+  width:100%;max-width:640px;background:#12151a;border-radius:20px 20px 0 0;
+  padding:20px 20px 26px;max-height:80vh;overflow:auto}}
+.modal-head{{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:16px}}
+.modal-title{{font:700 15px {_FONT_STACK};color:#e8eaed}}
+.modal-close{{display:inline-flex;align-items:center;justify-content:center;
+  border:none;background:rgba(255,255,255,.08);color:#e8eaed;width:26px;height:26px;
+  border-radius:50%;font:600 13px {_FONT_STACK};cursor:pointer}}
+.month-row{{display:flex;gap:8px}}
+.month-spacer{{width:28px;flex:none}}
+.month-grid{{display:grid;grid-template-columns:repeat({HEATMAP_WEEKS},10px);
+  gap:3px;flex:1;overflow-x:auto}}
+.month-label{{font:500 10px {_FONT_STACK};color:rgba(255,255,255,.4)}}
+.day-row{{display:flex;gap:8px;margin-top:5px}}
+.day-labels{{display:flex;flex-direction:column;gap:3px;width:28px;flex:none}}
+.day-label{{height:10px;font:400 9px {_FONT_STACK};color:rgba(255,255,255,.35);
+  line-height:10px}}
+.full-grid{{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,10px);
+  grid-template-columns:repeat({HEATMAP_WEEKS},10px);gap:3px;flex:1;overflow-x:auto}}
+.full-cell{{width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.06);
+  cursor:pointer}}
+.full-cell.l1{{background:#1e3a8a}}
+.full-cell.l2{{background:#3b82f6}}
+.full-cell.future{{background:transparent;cursor:default}}
+.modal-hint{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.35);margin-top:14px}}
 """
-
-
-def _status_row(cam_name, url, health, cam_bytes, avg_bytes, now):
-    if url:
-        name_cell = (
-            f'<a href="{html.escape(url)}" target="_blank" rel="noopener">'
-            f"{html.escape(cam_name)}</a>"
-        )
-    else:
-        name_cell = html.escape(cam_name)
-    last = health["last_time"]
-    if last is None:
-        last_cell = '<span class="muted">no frames yet</span>'
-    else:
-        last_cell = (
-            f"{html.escape(last.strftime('%Y-%m-%d %H:%M'))} "
-            f'<span class="muted">({html.escape(_human_ago(now - last))})</span>'
-        )
-    badge = (
-        '<span class="badge stale">stale</span>'
-        if health["is_stale"]
-        else '<span class="badge ok">live</span>'
-    )
-    outcome = health["outcome"]
-    if outcome:
-        outcome_name = outcome.get("outcome", "")
-        run_cell = html.escape(outcome_name)
-        detail = outcome.get("detail")
-        if detail:
-            if outcome_name == "saved":
-                detail = Path(str(detail)).name  # just the filename, not the full save path
-            run_cell += f' <span class="muted">{html.escape(str(detail))}</span>'
-    else:
-        run_cell = '<span class="muted">—</span>'
-    avg_cell = (
-        html.escape(_human_bytes(avg_bytes))
-        if avg_bytes is not None
-        else '<span class="muted">—</span>'
-    )
-    return (
-        f"<tr><td>{name_cell}</td><td>{badge}</td>"
-        f"<td>{last_cell}</td><td>{avg_cell}</td><td>{health['frame_count']}</td>"
-        f"<td>{html.escape(_human_bytes(cam_bytes))}</td><td>{run_cell}</td></tr>"
-    )
-
 
 _WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
 
 
-def _heatmap_html(grid):
-    """Render a GitHub-style grid with month labels on top and weekday labels on the left.
-
-    ``grid`` is a list of week-columns (oldest -> newest), each a list of 7 day
-    cells ordered Sunday..Saturday (see heatmap_grid). Labels are placed via a
-    single CSS grid so they line up with the 11px cells / 3px gaps.
-    """
-    cells = ['<div class="hm-corner"></div>']
-
-    prev_month = None
-    last_label_col = -3
+def _month_row_html(grid):
+    """Month labels spanning the weeks they cover, aligned above the full-history grid."""
+    spans = []  # (label, start_week_index, end_week_index_inclusive)
     for i, week in enumerate(grid):
-        first_date = week[0]["date"]
-        month_key = (first_date.year, first_date.month)
-        if month_key != prev_month and (i - last_label_col) >= 3:
-            label = first_date.strftime("%b")
-            last_label_col = i
+        month_key = week[0]["date"].strftime("%b")
+        if spans and spans[-1][0] == month_key and spans[-1][2] == i - 1:
+            spans[-1] = (month_key, spans[-1][1], i)
         else:
-            label = ""
-        prev_month = month_key
-        cells.append(f'<div class="hm-month">{label}</div>')
-
-    for row in range(7):
-        cells.append(f'<div class="hm-wd">{_WEEKDAY_LABELS.get(row, "")}</div>')
-        for week in grid:
-            cell = week[row]
-            if cell["future"]:
-                cls = "day future"
-                attrs = ""
-            else:
-                n = cell["count"]
-                info = f'{n} image{"s" if n != 1 else ""} on {cell["date"].isoformat()}'
-                # `title` alone needs a mouse hover, which touch screens have no way to
-                # trigger, so a tap (fires "click" on touch too) copies the same text
-                # into the visible .hm-info line below the grid.
-                attrs = (
-                    f' title="{info}" '
-                    f"onclick=\"this.closest('.heatmap').querySelector('.hm-info')"
-                    f'.textContent=this.title"'
-                )
-                cls = f"day l{cell['level']}"
-            cells.append(f'<div class="{cls}"{attrs}></div>')
-
+            spans.append((month_key, i, i))
+    cells = [
+        f'<div class="month-label" style="grid-column:{start + 1} / {end + 2}">{label}</div>'
+        for label, start, end in spans
+    ]
     return (
-        '<div class="heatmap"><div class="hm-grid">' + "".join(cells) + "</div>"
-        '<div class="hm-info muted">Tap a day for details</div></div>'
+        '<div class="month-row"><div class="month-spacer"></div>'
+        f'<div class="month-grid">{"".join(cells)}</div></div>'
     )
 
 
-def render_html(page_data, now):
+def _day_labels_html():
+    rows = [f'<div class="day-label">{_WEEKDAY_LABELS.get(r, "")}</div>' for r in range(7)]
+    return '<div class="day-labels">' + "".join(rows) + "</div>"
+
+
+def _day_title(count, day):
+    """'N images on YYYY-MM-DD' — count leads, date follows, for a heatmap cell tooltip."""
+    return f'{count} image{"s" if count != 1 else ""} on {day.isoformat()}'
+
+
+def _full_grid_html(grid):
+    """Render the 13-week x 7-day cells in column-major order (matches
+    ``grid-auto-flow: column``): one week's 7 days, then the next week's.
+
+    Each cell's ``title`` shows on hover; since touch screens have no way to
+    trigger a hover, an ``onclick`` also copies that same text into the
+    modal's ``.modal-hint`` line so a tap reveals it the same way.
+    """
+    cells = []
+    for week in grid:
+        for cell in week:
+            if cell["future"]:
+                cells.append('<div class="full-cell future"></div>')
+            else:
+                title = html.escape(_day_title(cell["count"], cell["date"]))
+                cells.append(
+                    f'<div class="full-cell l{cell["level"]}" title="{title}" '
+                    "onclick=\"this.closest('.modal-sheet').querySelector('.modal-hint')"
+                    '.textContent=this.title"></div>'
+                )
+    return '<div class="full-grid">' + "".join(cells) + "</div>"
+
+
+def _recent_strip_html(cells):
+    """Render the 14-day recent-activity strip.
+
+    Each cell's ``title`` shows the day's count on hover; an ``onclick``
+    mirrors the full-history grid's tap-to-reveal behavior into the
+    card's ``.recent-info`` line for touch screens.
+    """
+    divs = "".join(
+        f'<div class="recent-cell l{c["level"]}" '
+        f'title="{html.escape(_day_title(c["count"], c["date"]))}" '
+        "onclick=\"this.closest('.cam-body').querySelector('.recent-info')"
+        '.textContent=this.title"></div>'
+        for c in cells
+    )
+    return f'<div class="recent-strip">{divs}</div>'
+
+
+def _cam_card_html(cam, now):
+    key = cam["key"]
+    health = cam["health"]
+    last = health["last_time"]
+
+    name_html = html.escape(cam["name"])
+    if cam.get("url"):
+        cam_url = html.escape(cam["url"])
+        name_cell = (
+            f'<a class="cam-name" href="{cam_url}" target="_blank" rel="noopener">{name_html}</a>'
+        )
+    else:
+        name_cell = f'<div class="cam-name">{name_html}</div>'
+
+    if last:
+        ago = html.escape(_human_ago(now - last))
+        last_frame = f'{html.escape(last.strftime("%Y-%m-%d %H:%M"))} &middot; {ago}'
+    else:
+        last_frame = "no frames yet"
+    status_cls, status_text = ("stale", "STALE") if health["is_stale"] else ("live", "LIVE")
+
+    if cam.get("thumb_url"):
+        thumb = html.escape(cam["thumb_url"])
+        photo_inner = f'<img src="{thumb}" alt="Latest frame from {name_html}" loading="lazy">'
+    else:
+        photo_inner = '<div class="cam-photo-label">CAMERA PHOTO</div>'
+    photo = (
+        f'<div class="cam-photo">{photo_inner}'
+        '<div class="cam-photo-gradient"></div>'
+        '<div class="cam-photo-overlay">'
+        f'<div>{name_cell}<div class="cam-last-frame">{last_frame}</div></div>'
+        f'<span class="cam-status {status_cls}">{status_text}</span>'
+        "</div></div>"
+    )
+    if cam.get("thumb_url"):
+        photo = (
+            f'<a href="{html.escape(cam["thumb_url"])}" target="_blank" rel="noopener">{photo}</a>'
+        )
+
+    meta = (
+        '<div class="cam-meta">'
+        f'<span>{html.escape(_human_bytes(cam["avg_bytes"]))} avg</span>'
+        f'<span>{health["frame_count"]} frames</span>'
+        f'<span>{html.escape(_human_bytes(cam["bytes"]))} disk</span>'
+        "</div>"
+    )
+    heatmap_row = (
+        '<div class="cam-heatmap-row">'
+        f'{_recent_strip_html(cam["recent"])}'
+        f'<a class="history-btn" href="#history-{key}">full history &rarr;</a>'
+        "</div>"
+    )
+    recent_info = '<div class="recent-info">Tap a day for details</div>'
+    return (
+        f'<div class="cam-card">{photo}'
+        f'<div class="cam-body">{meta}{heatmap_row}{recent_info}</div></div>'
+    )
+
+
+def _history_modal_html(cam):
+    key = cam["key"]
+    return (
+        f'<div class="modal-overlay" id="history-{key}">'
+        f'<a class="modal-scrim" href="#!" aria-label="Close"></a>'
+        '<div class="modal-sheet">'
+        '<div class="modal-head">'
+        f'<div class="modal-title">{html.escape(cam["name"])} &middot; full history</div>'
+        '<a class="modal-close" href="#!" aria-label="Close">&times;</a>'
+        "</div>"
+        f'{_month_row_html(cam["full_grid"])}'
+        f'<div class="day-row">{_day_labels_html()}{_full_grid_html(cam["full_grid"])}</div>'
+        '<div class="modal-hint">Tap a day for details</div>'
+        "</div></div>"
+    )
+
+
+def render_html(page_data, now, show_stale_banner=False):
     sites = page_data["sites"]
     disk = page_data["disk"]
+    burn = page_data.get("burn_rate")
+    runway_days = page_data.get("runway_days")
+
     parts = [
         "<!doctype html>",
-        '<html lang="en" data-theme="dark"><head><meta charset="utf-8">',
+        '<html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<meta http-equiv="refresh" content="900">',  # reload every 15 min
         "<title>timelapse-creator status</title>",
-        f"<style>{_STYLE}</style></head><body><main>",
-        '<div class="top-row"><h1>timelapse-creator status</h1>'
-        '<label class="theme-select">Theme '
-        "<select onchange=\"document.documentElement.setAttribute('data-theme', this.value)\">"
-        '<option value="dark" selected>Dark</option>'
-        '<option value="light">Light</option>'
-        '<option value="system">System</option>'
-        "</select></label></div>",
-        f'<p class="sub">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M %Z"))} · '
-        f'"stale" = no new frame in over {STALE_MULTIPLIER}× a cam\'s normal interval · '
-        '<a href="archive/">browse the full archive</a></p>',
+        f"<style>{_STYLE}</style></head><body>",
+        '<div class="wrap"><div class="content">',
+        '<div class="header"><div>'
+        '<div class="title">timelapse-creator</div>'
+        f'<div class="subtitle">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M"))} '
+        f'&middot; {html.escape(now.strftime("%Z"))}</div></div>'
+        '<a class="archive-link" href="archive/">browse full archive &rarr;</a></div>',
     ]
+
+    if show_stale_banner and page_data["stale_count"] > 0:
+        parts.append(
+            '<div class="stale-banner"><div class="stale-dot"></div>'
+            f'<div class="stale-text">{page_data["stale_count"]} of {page_data["cam_count"]} '
+            "cams stale &mdash; no fresh frames</div></div>"
+        )
+
     if disk:
-        parts.append(
-            f'<p class="sub">Disk: {html.escape(_human_bytes(disk["free"]))} free of '
-            f'{html.escape(_human_bytes(disk["total"]))} '
-            f'({html.escape(_human_bytes(disk["used"]))} used)</p>'
+        used_pct = disk["used"] / disk["total"] * 100 if disk["total"] else 0
+        stats = [
+            '<div class="stat-card"><div class="stat-label">Disk free</div>'
+            f'<div class="stat-value">{html.escape(_human_bytes(disk["free"]))}</div>'
+            '<div class="stat-bar">'
+            f'<div class="stat-bar-fill" style="width:{used_pct:.1f}%"></div></div>'
+            f'<div class="stat-sub">of {html.escape(_human_bytes(disk["total"]))} '
+            f'&middot; {html.escape(_human_bytes(disk["used"]))} used</div></div>'
+        ]
+        warn_cls = " warn" if runway_days is not None and runway_days <= RUNWAY_WARN_DAYS else ""
+        if burn:
+            hours = burn["elapsed_hours"]
+            sub = (
+                f'{html.escape(_human_bytes(burn["projected_daily_bytes"]))}/day burn &middot; '
+                f'{html.escape(_human_bytes(burn["bytes_today"]))} captured in {hours:.1f} '
+                f'hr{"" if hours == 1 else "s"} today'
+            )
+        else:
+            sub = "not enough data yet to estimate burn rate"
+        stats.append(
+            '<div class="stat-card"><div class="stat-label">Runway</div>'
+            f'<div class="stat-value{warn_cls}">{html.escape(_human_runway(runway_days))}</div>'
+            f'<div class="stat-sub">{sub}</div></div>'
         )
-    burn = page_data.get("burn_rate")
-    if burn:
-        hours = burn["elapsed_hours"]
-        projected = html.escape(_human_bytes(burn["projected_daily_bytes"]))
-        so_far = html.escape(_human_bytes(burn["bytes_today"]))
-        until_full = burn.get("days_until_full")
-        until_full_text = (
-            f" · {_human_duration(until_full)} of free space left at this rate"
-            if until_full is not None
-            else ""
-        )
-        parts.append(
-            f'<p class="sub">Burn rate: {projected}/day projected from today\'s rate '
-            f'({so_far} captured in the first {hours:.1f} hr{"" if hours == 1 else "s"} '
-            f"of today){until_full_text}</p>"
-        )
+        parts.append(f'<div class="stats">{"".join(stats)}</div>')
 
     if not sites:
-        parts.append('<p class="muted">No frames archived yet.</p>')
+        parts.append('<p class="subtitle" style="margin-top:22px">No frames archived yet.</p>')
 
+    modals = []
     for site in sites:
-        parts.append(f"<h2>{html.escape(site['site'])}</h2>")
-        parts.append(
-            "<table><thead><tr><th>Cam</th><th>Status</th><th>Last frame</th>"
-            "<th>Avg size</th><th>Frames</th><th>Disk</th><th>Last run</th></tr></thead><tbody>"
-        )
+        parts.append('<div class="group"><div class="group-head">')
+        parts.append(f'<div class="group-name">{html.escape(site["site"])}</div>')
+        if site["stale_count"] > 0:
+            parts.append(f'<span class="group-badge">{site["stale_count"]} stale</span>')
+        parts.append('</div><div class="cams">')
         for cam in site["cams"]:
-            parts.append(
-                _status_row(
-                    cam["name"],
-                    cam.get("url"),
-                    cam["health"],
-                    cam["bytes"],
-                    cam.get("avg_bytes"),
-                    now,
-                )
-            )
-        parts.append("</tbody></table>")
-        for cam in site["cams"]:
-            parts.append('<div class="cam-block">')
-            parts.append(f'<div class="cam-name">{html.escape(cam["name"])}</div>')
-            parts.append('<div class="cam-row">')
-            parts.append(_heatmap_html(cam["grid"]))
-            if cam.get("thumb_url"):
-                thumb_url = html.escape(cam["thumb_url"])
-                parts.append(
-                    f'<a href="{thumb_url}" target="_blank" rel="noopener">'
-                    f'<img class="cam-thumb" src="{thumb_url}" '
-                    f'alt="Latest frame from {html.escape(cam["name"])}" loading="lazy"></a>'
-                )
-            parts.append("</div>")
-            parts.append("</div>")
+            parts.append(_cam_card_html(cam, now))
+            modals.append(_history_modal_html(cam))
+        parts.append("</div></div>")
 
-    parts.append(_legend_html())
-    parts.append(
-        f"<footer>Static page, regenerated after each capture run · "
-        f"{html.escape(now.isoformat())}</footer>"
-    )
-    parts.append("</main></body></html>")
+    parts.append("</div></div>")  # .content, .wrap
+    parts.extend(modals)
+    parts.append("</body></html>")
     return "\n".join(parts)
-
-
-def _legend_html():
-    cells = '<div class="day"></div>' + "".join(
-        f'<div class="day l{lvl}"></div>' for lvl in range(1, 5)
-    )
-    return f'<div class="legend"><span>Less</span>{cells}<span>More</span></div>'
 
 
 def parse_args():
@@ -592,10 +687,11 @@ def main():
     archive_dir = config["archive_dir"]
     log_path = config.get("capture_log")
     output = args.output or Path(config.get("web_output", DEFAULT_OUTPUT))
+    show_stale_banner = config.get("web_show_stale_banner", False)
 
     now = datetime.now(PACIFIC)
     page_data = build_page_data(archive_dir, log_path, now, cam_config=config.get("cams"))
-    html_doc = render_html(page_data, now)
+    html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html_doc)
