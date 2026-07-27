@@ -18,6 +18,11 @@ archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
 web_output: /var/lib/timelapse/www/index.html  # status page (web/generate.py)
 
+# Site display order on the status page (web/generate.py); sites not listed
+# here (e.g. a decommissioned site whose old frames are still on disk) sort
+# after these, alphabetically.
+site_order: [bluewood, seattle, north-carolina]
+
 cams:
   columbia:
     site: seattle  # frames land under archive/<site>/<cam>/...

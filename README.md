@@ -56,14 +56,15 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
 - `web/generate.py` — regenerates a single static status page (mobile-friendly card layout,
-  dark-only, grouped by site): disk-free/runway stat tiles up top (runway estimates days of
-  free space left at today's projected burn rate), a per-cam card with its live thumbnail
-  linked to the full-size frame, health status pill, avg frame size/frame count/disk usage,
-  and a 14-day recent-activity strip with tap-friendly tooltips (day counts show in a line
-  below the strip, not just an unreachable-on-mobile hover title), plus a "full history" link
-  opening a GitHub-style multi-month contribution grid per cam as a bottom-sheet —
-  implemented with CSS `:target`, no `<script>` tag — from the archive filenames and the
-  capture log; also symlinks the raw archive in next to the page so it's directly browsable
+  dark-only, grouped by site in the config's `site_order`): disk-free/runway stat tiles up
+  top (runway estimates days of free space left at today's projected burn rate), a per-cam
+  card with its live thumbnail linked to the full-size frame, health status pill, avg frame
+  size/frame count/disk usage, and a 31-day recent-activity strip with tap-friendly tooltips
+  (day counts show in a line below the strip, not just an unreachable-on-mobile hover title),
+  plus a "full history" link opening a GitHub-style multi-month contribution grid per cam as
+  a bottom-sheet — implemented with CSS `:target`, no `<script>` tag — from the archive
+  filenames and the capture log; also symlinks the raw archive in next to the page so it's
+  directly browsable
 - `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback
