@@ -144,21 +144,21 @@ def test_heatmap_grid_peak_is_scoped_to_the_displayed_window():
     assert end_cell["level"] == 2
 
 
-def test_recent_strip_is_14_cells_oldest_to_newest():
+def test_recent_strip_is_31_cells_oldest_to_newest():
     end = date(2026, 7, 22)
-    counts = {end: 4, end - timedelta(days=13): 1}
+    counts = {end: 4, end - timedelta(days=30): 1}
 
     cells = generate.recent_strip(counts, end)
 
-    assert len(cells) == 14
-    assert cells[0]["date"] == end - timedelta(days=13)
+    assert len(cells) == 31
+    assert cells[0]["date"] == end - timedelta(days=30)
     assert cells[-1]["date"] == end
     assert cells[-1]["level"] == 2  # the peak day in this window
 
 
 def test_recent_strip_ignores_activity_outside_its_window():
     end = date(2026, 7, 22)
-    counts = {end - timedelta(days=30): 500, end: 1}
+    counts = {end - timedelta(days=40): 500, end: 1}
 
     cells = generate.recent_strip(counts, end)
 
@@ -337,6 +337,29 @@ def test_build_page_data_orphaned_cam_is_stale_without_crashing(tmp_path):
     assert summit["health"]["is_stale"] is True
 
 
+def test_build_page_data_orders_sites_per_config(tmp_path):
+    _write_frame(tmp_path, "seattle", "columbia", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "north-carolina", "unca-tower", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, site_order=["bluewood", "seattle", "north-carolina"]
+    )
+
+    assert [site["site"] for site in data["sites"]] == ["bluewood", "seattle", "north-carolina"]
+
+
+def test_build_page_data_unlisted_sites_sort_after_configured_ones(tmp_path):
+    _write_frame(tmp_path, "seattle", "columbia", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "decommissioned-site", "old-cam", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, site_order=["seattle"])
+
+    assert [site["site"] for site in data["sites"]] == ["seattle", "decommissioned-site"]
+
+
 def test_build_page_data_computes_burn_rate_from_todays_frames(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T03-00-00-000000-0800", data=b"x" * 100)
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-15T03-00-00-000000-0800", data=b"x" * 900)
@@ -428,6 +451,27 @@ def test_render_html_links_cam_name_to_its_url(tmp_path):
 
     assert '<a class="cam-name" href="https://example.com/summit.jpg"' in doc
     assert ">summit</a>" in doc
+
+
+def test_render_html_thumb_link_does_not_nest_the_cam_name_link(tmp_path):
+    # Both links wrapping the same content (invalid nested <a>) makes browsers
+    # silently split/reflow the markup, which broke the cam-name's alignment.
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={"summit": {"url": "https://example.com/summit.jpg", "interval_minutes": 15}},
+    )
+    doc = generate.render_html(data, now)
+
+    thumb_open = '<a href="archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"'
+    thumb_start = doc.index(thumb_open)
+    thumb_close = doc.index("</a>", thumb_start)
+    name_open = doc.index('class="cam-name"')
+    assert not (thumb_start < name_open < thumb_close)
 
 
 def test_render_html_is_self_contained_and_shows_cams(tmp_path):

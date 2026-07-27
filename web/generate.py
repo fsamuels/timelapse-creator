@@ -32,7 +32,7 @@ from capture.capture_log import latest_outcomes, read_capture_log
 CONFIG_PATH = Path(__file__).parent.parent / "capture" / "config.yaml"
 DEFAULT_OUTPUT = "site/index.html"
 HEATMAP_WEEKS = 13  # ~a quarter, the full-history window shown per cam
-RECENT_DAYS = 14  # the compact recent-activity strip on each cam card
+RECENT_DAYS = 31  # the compact recent-activity strip on each cam card
 HEATMAP_LEVELS = 2  # off / low / high — see _level()
 STALE_MULTIPLIER = 2  # flag a cam stale after this many missed capture intervals
 RUNWAY_WARN_DAYS = 14  # runway at or below this is flagged in warning red
@@ -273,12 +273,30 @@ def stale_after_for(cam_cfg):
     return timedelta(minutes=STALE_MULTIPLIER * cam_cfg["interval_minutes"])
 
 
-def build_page_data(archive_dir, log_path, now, cam_config=None):
+def _site_sort_key(site_order):
+    """Sort key factory: configured sites in ``site_order``'s order first,
+    then any others (e.g. a decommissioned site whose old frames are still on
+    disk but which no longer appears in the config) alphabetically after.
+    """
+
+    def key(site):
+        try:
+            return (0, site_order.index(site))
+        except ValueError:
+            return (1, site)
+
+    return key
+
+
+def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None):
     """Gather everything the template needs from the archive and the log.
 
     ``cam_config`` is the capture config's ``cams`` mapping (cam name -> dict
     with ``url`` and ``interval_minutes``), used to link each cam's name to
     its live image and to size its stale threshold.
+
+    ``site_order`` is the config's top-level ``site_order`` list, controlling
+    the order sites are displayed in; sites not listed sort after, alphabetically.
 
     Returns ``{"sites": [...], "disk": {...} or None, "burn_rate": {...} or
     None, "runway_days": float or None, "stale_count": int, "cam_count": int}``.
@@ -293,7 +311,8 @@ def build_page_data(archive_dir, log_path, now, cam_config=None):
     bytes_today = 0
     stale_count = 0
     cam_count = 0
-    for site, cams in sites.items():
+    for site in sorted(sites, key=_site_sort_key(site_order or [])):
+        cams = sites[site]
         cam_views = []
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
@@ -398,10 +417,10 @@ a{{text-decoration:none}}
 .cam-meta{{display:flex;gap:14px;flex-wrap:wrap;font:400 10.5px {_FONT_STACK};
   color:rgba(255,255,255,.45)}}
 .cam-heatmap-row{{display:flex;align-items:center;justify-content:space-between;
-  margin-top:10px;gap:10px}}
-.recent-strip{{display:grid;grid-template-columns:repeat({RECENT_DAYS},8px);
-  gap:1px;opacity:.85}}
-.recent-cell{{width:8px;height:8px;border-radius:1px;background:rgba(255,255,255,.06);
+  flex-wrap:wrap;margin-top:10px;gap:6px 10px}}
+.recent-strip{{display:grid;grid-template-columns:repeat({RECENT_DAYS},6px);
+  gap:1px;opacity:.85;max-width:100%;overflow-x:auto}}
+.recent-cell{{width:6px;height:6px;border-radius:1px;background:rgba(255,255,255,.06);
   cursor:pointer}}
 .recent-cell.l1{{background:#1e3a8a}}
 .recent-cell.l2{{background:#3b82f6}}
@@ -496,7 +515,7 @@ def _full_grid_html(grid):
 
 
 def _recent_strip_html(cells):
-    """Render the 14-day recent-activity strip.
+    """Render the 31-day recent-activity strip.
 
     Each cell's ``title`` shows the day's count on hover; an ``onclick``
     mirrors the full-history grid's tap-to-reveal behavior into the
@@ -535,7 +554,12 @@ def _cam_card_html(cam, now):
 
     if cam.get("thumb_url"):
         thumb = html.escape(cam["thumb_url"])
-        photo_inner = f'<img src="{thumb}" alt="Latest frame from {name_html}" loading="lazy">'
+        img = f'<img src="{thumb}" alt="Latest frame from {name_html}" loading="lazy">'
+        # Only the image itself links to the full-size thumb — wrapping the whole
+        # .cam-photo div (as before) nested this <a> around the cam-name link
+        # below, and browsers silently split/reflow invalid nested anchors,
+        # which was throwing off the name's left alignment on cams with a url.
+        photo_inner = f'<a href="{thumb}" target="_blank" rel="noopener">{img}</a>'
     else:
         photo_inner = '<div class="cam-photo-label">CAMERA PHOTO</div>'
     photo = (
@@ -546,10 +570,6 @@ def _cam_card_html(cam, now):
         f'<span class="cam-status {status_cls}">{status_text}</span>'
         "</div></div>"
     )
-    if cam.get("thumb_url"):
-        photo = (
-            f'<a href="{html.escape(cam["thumb_url"])}" target="_blank" rel="noopener">{photo}</a>'
-        )
 
     meta = (
         '<div class="cam-meta">'
@@ -690,7 +710,13 @@ def main():
     show_stale_banner = config.get("web_show_stale_banner", False)
 
     now = datetime.now(PACIFIC)
-    page_data = build_page_data(archive_dir, log_path, now, cam_config=config.get("cams"))
+    page_data = build_page_data(
+        archive_dir,
+        log_path,
+        now,
+        cam_config=config.get("cams"),
+        site_order=config.get("site_order"),
+    )
     html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner)
 
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -301,12 +301,15 @@ downloaded per day.
   figure.
 - **Cam cards, grouped by site:** each card shows the live thumbnail with a status pill
   (`LIVE`/`STALE`) and last-frame time overlaid, then avg frame size / frame count / disk
-  usage, then a 14-day recent-activity strip (a quieter, lower-detail cousin of the full
+  usage, then a 31-day recent-activity strip (a quieter, lower-detail cousin of the full
   heatmap — see below) and a "full history →" link. A group header shows a stale-count
   badge when any of its cams are stale (hidden otherwise). An optional, off-by-default
   `web_show_stale_banner: true` config key additionally surfaces an amber "N of M cams
   stale" banner at the top of the page — off by default because some cams are intentionally
-  disabled for stretches and the team didn't want that flagged on every visit.
+  disabled for stretches and the team didn't want that flagged on every visit. Site groups
+  are ordered by the config's top-level `site_order` list (e.g. `[bluewood, seattle,
+  north-carolina]`); a site with archived frames but no entry in `site_order` (e.g. a
+  decommissioned site) sorts after the listed ones, alphabetically.
 - **Full-history modal:** "full history →" opens a bottom-sheet with the same 13-week
   GitHub-style contribution grid the old design showed inline, now per-cam and hidden until
   opened. Built with **CSS `:target`** (a `<a href="#history-{cam}">` / `#history-{cam}"`
@@ -315,7 +318,7 @@ downloaded per day.
   no client-side calendar logic to duplicate. The close link/scrim both point at `href="#!"`
   rather than `href="#"` — a bare `#` also targets the document top and yanks the page's
   scroll position, which `#!` (matching no element) avoids.
-- **Activity leveling:** both the 14-day strip and the full-history grid use the same
+- **Activity leveling:** both the 31-day strip and the full-history grid use the same
   `_level()` bucketing, now a simple off/low/high (3-color) scale rather than the old
   5-color one — visually quieter, matching the reference's intent for the strip to read as
   secondary information, not a primary alert.
