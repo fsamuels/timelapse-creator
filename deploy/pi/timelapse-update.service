@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull and redeploy timelapse-creator from main
+
+[Service]
+Type=oneshot
+# Runs `git pull` — match this to whichever account owns the /opt/timelapse-creator
+# clone (see deploy/pi/README.md step 1) so pulled files don't end up root-owned.
+User=pi
+Group=pi
+WorkingDirectory=/opt/timelapse-creator
+ExecStart=/opt/timelapse-creator/deploy/pi/update.sh

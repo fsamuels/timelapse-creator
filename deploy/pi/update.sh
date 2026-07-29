@@ -4,6 +4,8 @@ set -euo pipefail
 # Redeploys the Pi after a PR merges to main: pulls the latest commit,
 # reinstalls dependencies if requirements.txt changed, and regenerates the
 # status page immediately instead of waiting for the next capture tick.
+# If the pull brings no new commits, dependency install and page regen are
+# skipped — safe to run this on a timer without doing needless work every tick.
 #
 # Run this on the Pi itself:
 #   deploy/pi/update.sh [config]
@@ -23,8 +25,17 @@ if [ "$BRANCH" != "main" ]; then
   exit 1
 fi
 
+BEFORE_SHA="$(git rev-parse HEAD)"
+
 echo "==> Pulling latest main"
 git pull origin main --ff-only
+
+AFTER_SHA="$(git rev-parse HEAD)"
+
+if [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
+  echo "==> Already up to date ($AFTER_SHA); nothing to do"
+  exit 0
+fi
 
 echo "==> Installing dependencies"
 .venv/bin/pip install -q -r requirements.txt
