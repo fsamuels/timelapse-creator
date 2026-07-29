@@ -8,7 +8,8 @@ contribution grid, opened as a bottom-sheet "modal" implemented purely with CSS
 ``:target`` — no ``<script>`` tag, keeping the page dependency-free).
 
 Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
-so it's directly browsable, and reports per-cam and total disk usage.
+so it's directly browsable, reports per-cam and total disk usage, and shows a
+footer of host stats (uptime, memory, load average — see ``system_stats``).
 
 Designed to run on the Pi after each capture (see deploy/pi/), regenerating the
 page — no persistent app server. It reads ``archive_dir`` from the config, so it
@@ -19,6 +20,7 @@ frames) with no source-era filtering logic of its own.
 import argparse
 import html
 import math
+import os
 import re
 import shutil
 from datetime import datetime, timedelta
@@ -83,6 +85,57 @@ def disk_usage(archive_dir):
         return None
     usage = shutil.disk_usage(archive_dir)
     return {"total": usage.total, "used": usage.used, "free": usage.free}
+
+
+def read_uptime_seconds(path="/proc/uptime"):
+    """Seconds since boot, from /proc/uptime. None off-Linux or if unreadable."""
+    try:
+        text = Path(path).read_text()
+    except OSError:
+        return None
+    return float(text.split()[0])
+
+
+def read_memory_usage(path="/proc/meminfo"):
+    """``{"total_kb", "available_kb"}`` from /proc/meminfo.
+
+    None off-Linux, if unreadable, or if either field is missing.
+    """
+    try:
+        text = Path(path).read_text()
+    except OSError:
+        return None
+    values = {}
+    for line in text.splitlines():
+        key, _, rest = line.partition(":")
+        if key in ("MemTotal", "MemAvailable"):
+            values[key] = int(rest.split()[0])  # kB, per /proc/meminfo's own unit
+    if "MemTotal" not in values or "MemAvailable" not in values:
+        return None
+    return {"total_kb": values["MemTotal"], "available_kb": values["MemAvailable"]}
+
+
+def system_stats(uptime_path="/proc/uptime", meminfo_path="/proc/meminfo", load_avg_fn=None):
+    """Host stats for the status page footer: uptime, memory, load average.
+
+    Reads straight from /proc rather than a library like psutil — this runs on
+    a Pi Zero W (armv6), where a C-extension dependency isn't guaranteed to
+    have a prebuilt wheel (see deploy/pi/README.md's wheel caveat). Load
+    average (not instantaneous CPU%) is used for the same reason it's the
+    standard Unix-ops proxy for "processor usage": sampling instantaneous
+    usage needs two /proc/stat reads with a sleep in between, which would
+    slow down every page regeneration; the paths/fn are injectable for tests.
+    """
+    load_avg_fn = load_avg_fn or os.getloadavg
+    try:
+        load_avg = load_avg_fn()
+    except OSError:
+        load_avg = None
+    return {
+        "uptime_seconds": read_uptime_seconds(uptime_path),
+        "memory": read_memory_usage(meminfo_path),
+        "load_avg": load_avg,
+    }
 
 
 def ensure_archive_link(www_dir, archive_dir):
@@ -221,6 +274,18 @@ def _human_bytes(n):
         if size < 1024 or unit == "TB":
             return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
+
+
+def _human_uptime(seconds):
+    """Render seconds-since-boot like '3d 4h', '4h 12m', or '12m'."""
+    total_minutes = int(seconds // 60)
+    days, rem_minutes = divmod(total_minutes, 24 * 60)
+    hours, minutes = divmod(rem_minutes, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
 
 
 def _human_ago(delta):
@@ -459,6 +524,8 @@ a{{text-decoration:none}}
 .full-cell.l2{{background:#3b82f6}}
 .full-cell.future{{background:transparent;cursor:default}}
 .modal-hint{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.35);margin-top:14px}}
+.footer{{margin-top:28px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);
+  font:400 10px {_FONT_STACK};color:rgba(255,255,255,.3);text-align:center}}
 """
 
 _WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
@@ -614,7 +681,34 @@ def _history_modal_html(cam):
     )
 
 
-def render_html(page_data, now, show_stale_banner=False):
+def _footer_html(system):
+    """Render the host-stats footer line: uptime, memory, load average.
+
+    Each stat is included only if its underlying read succeeded (see
+    ``system_stats``), so the footer degrades gracefully rather than showing
+    a fabricated value — e.g. on a dev machine with no /proc/meminfo.
+    """
+    bits = []
+    if system.get("uptime_seconds") is not None:
+        bits.append(f'Uptime {html.escape(_human_uptime(system["uptime_seconds"]))}')
+    memory = system.get("memory")
+    if memory:
+        used_kb = memory["total_kb"] - memory["available_kb"]
+        pct = used_kb / memory["total_kb"] * 100 if memory["total_kb"] else 0
+        bits.append(
+            f"Mem {html.escape(_human_bytes(used_kb * 1024))} / "
+            f'{html.escape(_human_bytes(memory["total_kb"] * 1024))} ({pct:.0f}%)'
+        )
+    load_avg = system.get("load_avg")
+    if load_avg:
+        l1, l5, l15 = load_avg
+        bits.append(f"Load {l1:.2f}, {l5:.2f}, {l15:.2f}")
+    if not bits:
+        return ""
+    return f'<div class="footer">{" &middot; ".join(bits)}</div>'
+
+
+def render_html(page_data, now, show_stale_banner=False, system=None):
     sites = page_data["sites"]
     disk = page_data["disk"]
     burn = page_data.get("burn_rate")
@@ -684,6 +778,9 @@ def render_html(page_data, now, show_stale_banner=False):
             modals.append(_history_modal_html(cam))
         parts.append("</div></div>")
 
+    if system:
+        parts.append(_footer_html(system))
+
     parts.append("</div></div>")  # .content, .wrap
     parts.extend(modals)
     parts.append("</body></html>")
@@ -723,7 +820,9 @@ def main():
         cam_config=config.get("cams"),
         site_order=config.get("site_order"),
     )
-    html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner)
+    html_doc = render_html(
+        page_data, now, show_stale_banner=show_stale_banner, system=system_stats()
+    )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html_doc)
