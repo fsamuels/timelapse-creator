@@ -681,6 +681,120 @@ def test_render_html_cam_status_pill_reflects_health(tmp_path):
     assert '<span class="cam-status live">LIVE</span>' in doc
 
 
+def test_read_uptime_seconds_parses_proc_uptime(tmp_path):
+    path = tmp_path / "uptime"
+    path.write_text("12345.67 54321.00\n")
+
+    assert generate.read_uptime_seconds(path) == 12345.67
+
+
+def test_read_uptime_seconds_missing_file_is_none(tmp_path):
+    assert generate.read_uptime_seconds(tmp_path / "nope") is None
+
+
+def test_read_memory_usage_parses_meminfo(tmp_path):
+    path = tmp_path / "meminfo"
+    path.write_text(
+        "MemTotal:        1000000 kB\nMemFree:          200000 kB\n" "MemAvailable:     600000 kB\n"
+    )
+
+    assert generate.read_memory_usage(path) == {"total_kb": 1000000, "available_kb": 600000}
+
+
+def test_read_memory_usage_missing_file_is_none(tmp_path):
+    assert generate.read_memory_usage(tmp_path / "nope") is None
+
+
+def test_read_memory_usage_missing_field_is_none(tmp_path):
+    path = tmp_path / "meminfo"
+    path.write_text("MemTotal:        1000000 kB\n")  # no MemAvailable
+
+    assert generate.read_memory_usage(path) is None
+
+
+def test_system_stats_bundles_uptime_memory_and_load_avg(tmp_path):
+    uptime_path = tmp_path / "uptime"
+    uptime_path.write_text("100.0 200.0\n")
+    meminfo_path = tmp_path / "meminfo"
+    meminfo_path.write_text("MemTotal:  1000 kB\nMemAvailable:  400 kB\n")
+
+    stats = generate.system_stats(
+        uptime_path=uptime_path,
+        meminfo_path=meminfo_path,
+        load_avg_fn=lambda: (0.1, 0.2, 0.3),
+    )
+
+    assert stats == {
+        "uptime_seconds": 100.0,
+        "memory": {"total_kb": 1000, "available_kb": 400},
+        "load_avg": (0.1, 0.2, 0.3),
+    }
+
+
+def test_system_stats_load_avg_unavailable_is_none(tmp_path):
+    def raise_oserror():
+        raise OSError("not supported")
+
+    stats = generate.system_stats(
+        uptime_path=tmp_path / "nope",
+        meminfo_path=tmp_path / "nope",
+        load_avg_fn=raise_oserror,
+    )
+
+    assert stats["load_avg"] is None
+
+
+def test_human_uptime_days_and_hours():
+    assert generate._human_uptime(3 * 86400 + 4 * 3600) == "3d 4h"
+
+
+def test_human_uptime_hours_and_minutes():
+    assert generate._human_uptime(4 * 3600 + 12 * 60) == "4h 12m"
+
+
+def test_human_uptime_minutes_only():
+    assert generate._human_uptime(12 * 60) == "12m"
+
+
+def test_render_html_footer_shows_uptime_memory_and_load(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {
+        "uptime_seconds": 3 * 86400 + 4 * 3600,
+        "memory": {"total_kb": 1000000, "available_kb": 400000},
+        "load_avg": (0.15, 0.09, 0.05),
+    }
+    doc = generate.render_html(data, now, system=system)
+
+    assert '<div class="footer">' in doc
+    assert "Uptime 3d 4h" in doc
+    assert "Mem" in doc and "(60%)" in doc
+    assert "Load 0.15, 0.09, 0.05" in doc
+
+
+def test_render_html_footer_omitted_without_system_stats(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert '<div class="footer">' not in doc
+
+
+def test_render_html_footer_degrades_when_some_stats_missing(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {"uptime_seconds": None, "memory": None, "load_avg": None}
+    doc = generate.render_html(data, now, system=system)
+
+    assert '<div class="footer">' not in doc
+
+
 def test_render_html_runway_gets_warn_class_when_low(tmp_path):
     # A tiny disk with meaningful burn should read as a low, "warn" runway.
     _write_frame(
