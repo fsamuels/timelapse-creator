@@ -401,13 +401,15 @@ a{{text-decoration:none}}
   overflow:hidden;background:rgba(255,255,255,.02)}}
 .cam-photo{{position:relative;display:block;height:150px;
   background:repeating-linear-gradient(45deg,#1a1d22,#1a1d22 8px,#22262c 8px,#22262c 16px)}}
+.cam-photo-link{{position:absolute;inset:0;display:block}}
 .cam-photo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}
 .cam-photo-label{{position:absolute;top:10px;left:12px;font:500 9px {_FONT_STACK};
   color:rgba(255,255,255,.25);letter-spacing:.05em}}
-.cam-photo-gradient{{position:absolute;inset:0;
+.cam-photo-gradient{{position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(to top,rgba(0,0,0,.82),transparent 60%)}}
 .cam-photo-overlay{{position:absolute;left:14px;right:14px;bottom:10px;display:flex;
-  align-items:flex-end;justify-content:space-between;gap:8px}}
+  align-items:flex-end;justify-content:space-between;gap:8px;pointer-events:none}}
+.cam-photo-overlay a{{pointer-events:auto}}
 .cam-name{{font:700 16px {_FONT_STACK};color:#fff}}
 .cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.65);margin-top:2px}}
 .cam-status{{font:600 9.5px {_FONT_STACK};padding:3px 9px;border-radius:20px;flex:none}}
@@ -442,16 +444,16 @@ a{{text-decoration:none}}
   border-radius:50%;font:600 13px {_FONT_STACK};cursor:pointer}}
 .month-row{{display:flex;gap:8px}}
 .month-spacer{{width:28px;flex:none}}
-.month-grid{{display:grid;grid-template-columns:repeat({HEATMAP_WEEKS},10px);
-  gap:3px;flex:1;overflow-x:auto}}
+.month-grid{{display:grid;grid-template-columns:repeat({HEATMAP_WEEKS},18px);
+  gap:4px;flex:1;overflow-x:auto}}
 .month-label{{font:500 10px {_FONT_STACK};color:rgba(255,255,255,.4)}}
 .day-row{{display:flex;gap:8px;margin-top:5px}}
-.day-labels{{display:flex;flex-direction:column;gap:3px;width:28px;flex:none}}
-.day-label{{height:10px;font:400 9px {_FONT_STACK};color:rgba(255,255,255,.35);
-  line-height:10px}}
-.full-grid{{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,10px);
-  grid-template-columns:repeat({HEATMAP_WEEKS},10px);gap:3px;flex:1;overflow-x:auto}}
-.full-cell{{width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.06);
+.day-labels{{display:flex;flex-direction:column;gap:4px;width:28px;flex:none}}
+.day-label{{height:18px;font:400 9px {_FONT_STACK};color:rgba(255,255,255,.35);
+  line-height:18px}}
+.full-grid{{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,18px);
+  grid-template-columns:repeat({HEATMAP_WEEKS},18px);gap:4px;flex:1;overflow-x:auto}}
+.full-cell{{width:18px;height:18px;border-radius:3px;background:rgba(255,255,255,.06);
   cursor:pointer}}
 .full-cell.l1{{background:#1e3a8a}}
 .full-cell.l2{{background:#3b82f6}}
@@ -555,11 +557,15 @@ def _cam_card_html(cam, now):
     if cam.get("thumb_url"):
         thumb = html.escape(cam["thumb_url"])
         img = f'<img src="{thumb}" alt="Latest frame from {name_html}" loading="lazy">'
-        # Only the image itself links to the full-size thumb — wrapping the whole
-        # .cam-photo div (as before) nested this <a> around the cam-name link
-        # below, and browsers silently split/reflow invalid nested anchors,
-        # which was throwing off the name's left alignment on cams with a url.
-        photo_inner = f'<a href="{thumb}" target="_blank" rel="noopener">{img}</a>'
+        # The anchor covers the whole .cam-photo box (not just the image) so the
+        # entire thumbnail is clickable, not only the pixels under the img. The
+        # cam-name link below lives in a sibling (not descendant) element, so
+        # there's no invalid nested <a> — that previously made browsers silently
+        # split/reflow the markup, throwing off the name's left alignment.
+        photo_inner = (
+            f'<a href="{thumb}" class="cam-photo-link" target="_blank" rel="noopener" '
+            f'aria-label="Full size frame from {name_html}">{img}</a>'
+        )
     else:
         photo_inner = '<div class="cam-photo-label">CAMERA PHOTO</div>'
     photo = (
@@ -619,7 +625,7 @@ def render_html(page_data, now, show_stale_banner=False):
         '<html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<meta http-equiv="refresh" content="900">',  # reload every 15 min
-        "<title>timelapse-creator status</title>",
+        "<title>Capture Status</title>",
         f"<style>{_STYLE}</style></head><body>",
         '<div class="wrap"><div class="content">',
         '<div class="header"><div>'

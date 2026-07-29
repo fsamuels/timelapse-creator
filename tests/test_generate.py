@@ -505,7 +505,7 @@ def test_render_html_thumbnail_links_to_the_full_size_frame(tmp_path):
     doc = generate.render_html(data, now)
 
     thumb_url = "archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"
-    assert f'<a href="{thumb_url}" target="_blank" rel="noopener">' in doc
+    assert f'<a href="{thumb_url}" class="cam-photo-link" target="_blank" rel="noopener"' in doc
 
 
 def test_render_html_no_thumbnail_shows_placeholder(tmp_path):
