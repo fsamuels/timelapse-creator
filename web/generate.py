@@ -629,7 +629,7 @@ def render_html(page_data, now, show_stale_banner=False):
         f"<style>{_STYLE}</style></head><body>",
         '<div class="wrap"><div class="content">',
         '<div class="header"><div>'
-        '<div class="title">timelapse-creator</div>'
+        '<div class="title">Capture Status</div>'
         f'<div class="subtitle">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M"))} '
         f'&middot; {html.escape(now.strftime("%Z"))}</div></div>'
         '<a class="archive-link" href="archive/">browse full archive &rarr;</a></div>',
