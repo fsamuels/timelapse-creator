@@ -1,9 +1,10 @@
 # Pi SD card migration: 4GB → 64GB
 
-**Status: documented, not yet executed.** This is the runbook for when the Pi's current 4GB
-card needs replacing — see `docs/open-questions.md` #11 for why (six cams now capturing,
-up from four, and the North Carolina cams' PNG snapshots are likely larger per frame than
-the Bluewood/Seattle JPEGs). Nothing here has been run against the live Pi yet.
+**Status: executed, 2026-07-30.** This was the runbook used to replace the Pi's original 4GB
+card — see `docs/open-questions.md` #11 for why (six cams capturing at the time, up from
+four, and the North Carolina cams' PNG snapshots are likely larger per frame than the
+Bluewood/Seattle JPEGs). The Pi is now running on the 64GB card; this doc is kept as a
+reference for any future card swap.
 
 ## Recommended approach: fresh OS install + `rsync` the archive over
 

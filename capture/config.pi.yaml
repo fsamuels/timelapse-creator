@@ -12,8 +12,13 @@
 # — Pi-only, no GitHub Actions equivalent. They ran hourly (interval_minutes)
 # rather than every 15 min to slow disk growth; capture/main.py enforces the
 # per-cam interval itself (single timer, see deploy/pi/), so this is the only
-# place the schedule is declared. Commented out below (not deleted) until the
-# Pi is migrated to the 64GB card — see that entry for details.
+# place the schedule is declared. unca-tower was re-enabled once the Pi moved
+# to the 64GB card; nantahala-outdoor-center stays commented out below.
+# sea-tac was added at the same time under seattle, also every 15 min. A new
+# washington site groups WA cams that aren't Seattle-specific: mount-rainier
+# (moved out of seattle) and kalaloch-lodge (Olympic coast), both every 15
+# min. Speculative additions while there's card headroom — may get trimmed
+# later.
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
@@ -22,7 +27,7 @@ web_output: /var/lib/timelapse/www/index.html  # status page (web/generate.py)
 # Site display order on the status page (web/generate.py); sites not listed
 # here (e.g. a decommissioned site whose old frames are still on disk) sort
 # after these, alphabetically.
-site_order: [bluewood, seattle, north-carolina]
+site_order: [bluewood, seattle, washington, north-carolina]
 
 cams:
   columbia:
@@ -34,6 +39,21 @@ cams:
     site: seattle
     type: image
     url: "https://cdn.tegna-media.com/king/weather/queenanne.jpg"
+    interval_minutes: 15
+  sea-tac:
+    site: seattle
+    type: image
+    url: "https://cdn.tegna-media.com/king/weather/seatac.jpg"
+    interval_minutes: 15
+  mount-rainier:
+    site: washington  # not Seattle-specific; grouped with other WA-wide cams
+    type: image
+    url: "https://www.nps.gov/webcams-mora/mountain.jpg"
+    interval_minutes: 15
+  kalaloch-lodge:
+    site: washington
+    type: image
+    url: "https://cs1.pixelcaster.com/dnc-kalaloch/kalaloch.jpg"
     interval_minutes: 15
   summit:
     site: bluewood
@@ -48,12 +68,13 @@ cams:
   # North Carolina cams disabled 2026-07-25: no time yet to migrate the Pi to
   # the 64GB card, and these were adding to disk pressure. Commented out
   # rather than deleted since we intend to re-enable once the card migration
-  # happens.
-  # unca-tower:
-  #   site: north-carolina
-  #   type: image
-  #   url: "https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20UNCA%20EcoNet.png"
-  #   interval_minutes: 60
+  # happens. unca-tower re-enabled 2026-07-30 now that the Pi is on the 64GB
+  # card; nantahala-outdoor-center still disabled.
+  unca-tower:
+    site: north-carolina
+    type: image
+    url: "https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20UNCA%20EcoNet.png"
+    interval_minutes: 60
   # nantahala-outdoor-center:
   #   site: north-carolina
   #   type: image

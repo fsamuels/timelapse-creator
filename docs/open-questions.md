@@ -6,13 +6,13 @@ recommendations. None of these are locked in yet.
 ## 1. Where does the capture job run? (decided)
 
 **Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now the sole capture platform,
-capturing all six cams every 15 minutes via a systemd timer. The Pi was ordered
-2026-07-16.
+capturing all eight cams via a systemd timer (15 min for most, 60 min for unca-tower). The
+Pi was ordered 2026-07-16.
 
 ### The Pi hand-off plan (decided; complete)
 
 **Status:** the hand-off trial is over. The Pi (`timelapse-pi`) is deployed and live —
-running the systemd capture timer against `capture/config.pi.yaml` (all six cams) and
+running the systemd capture timer against `capture/config.pi.yaml` (all eight cams) and
 serving the status page at `http://timelapse-pi.local:8080/`. The git-committed Bluewood
 frames have been migrated onto the Pi's local archive, `capture.yml`'s `schedule:` trigger
 has been removed (`workflow_dispatch` stays as a manual emergency-capture fallback), and
@@ -313,7 +313,11 @@ archived frames stay in `archive/north-carolina/` and the status page still show
 see `stale_after_for` in `web/generate.py`). Re-enable by uncommenting once question 11 is
 done.
 
-## 11. SD card capacity migration (documented, not yet executed)
+**Update, 2026-07-30:** now that question 11's migration is done, the UNCA tower cam is
+re-enabled (uncommented, still 60-min `interval_minutes`). The Nantahala Outdoor Center cam
+stays commented out for now.
+
+## 11. SD card capacity migration (done, 2026-07-30)
 
 The Pi currently boots from a **4GB** microSD card. Two things are now squeezing it:
 
@@ -332,10 +336,15 @@ The Pi currently boots from a **4GB** microSD card. Two things are now squeezing
 process is documented as a runbook in **`docs/sd-card-migration.md`** — a fresh-OS-install +
 `rsync`-the-archive-over approach (recommended over a full-disk `dd` clone, since it doubles
 as a from-scratch verification that `deploy/pi/README.md`'s bring-up steps still work, and
-sidesteps partition-resize fuss). **Not yet executed** — this is the documented process for
-when it's time, not a completed migration. In the meantime, watch actual growth via the
-status page's per-cam and total disk-usage figures (`web/generate.py`, already built) rather
-than relying on the estimate above.
+sidesteps partition-resize fuss).
+
+**Update, 2026-07-30:** migration executed — the Pi is now on the 64GB card. With headroom
+back, the UNCA tower cam was re-enabled, SeaTac was added under `seattle`, and a new
+`washington` site was created for Washington-state cams that aren't Seattle-specific: Mount
+Rainier (moved out of `seattle`) and Kalaloch Lodge (Olympic coast). All new cams run at the
+standard 15-min cadence (question 10, question 12). These are speculative additions while
+there's headroom — expect some to get trimmed later. Keep watching actual growth via the
+status page's per-cam and total disk-usage figures (`web/generate.py`).
 
 ## 12. Next concrete steps
 
@@ -350,8 +359,11 @@ than relying on the estimate above.
 - [x] Confirm the Pi writes to real local disk (`/var/lib/timelapse/archive`) end-to-end on
       hardware, in the `<site>/<cam>/` layout
 - [x] Add the two North Carolina cams (question 10) — `capture/config.pi.yaml`, Pi-only
-- [ ] Execute the SD card migration (question 11) — runbook is written
-      (`docs/sd-card-migration.md`), migration itself not yet done
+- [x] Execute the SD card migration (question 11) — Pi is now on the 64GB card
+- [x] Re-enable the UNCA tower cam and add SeaTac (question 10) now that the card migration
+      freed up headroom — `capture/config.pi.yaml`
+- [x] Add a new `washington` site for cams that aren't Seattle-specific — Mount Rainier
+      (moved out of `seattle`) and Kalaloch Lodge — `capture/config.pi.yaml`
 - [x] Migrate the existing git-committed Bluewood frames onto the Pi's storage so the archive
       has one home (question 1, question 5)
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the

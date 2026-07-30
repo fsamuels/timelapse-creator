@@ -49,6 +49,12 @@
   interval (an "hourly" cam settling into running every 75 minutes). Bucketing by absolute
   time is immune to this since due-ness never depends on when the previous run finished. The
   North Carolina cams are set to `interval_minutes: 60`; everything else stays at 15.
+- **Card migration to 64GB, then more cams (2026-07-30).** With the SD card migration
+  (`docs/open-questions.md` #11) done, the UNCA tower cam was re-enabled, SeaTac was added
+  under `seattle`, and a new `washington` site was created for Washington-state cams that
+  aren't Seattle-specific: Mount Rainier (moved out of `seattle`) and Kalaloch Lodge, both
+  `interval_minutes: 15`. Speculative additions while there's card headroom — expect some to
+  get trimmed later. The Pi now captures eight cams total.
 
 ## Architecture: two decoupled pieces
 
@@ -114,6 +120,16 @@ archive/
     queenanne/
       2026/07/
         ...
+    sea-tac/
+      2026/07/
+        ...
+  washington/
+    mount-rainier/
+      2026/07/
+        ...
+    kalaloch-lodge/
+      2026/07/
+        ...
   north-carolina/
     unca-tower/
       2026/07/
@@ -125,9 +141,11 @@ archive/
 
 - The archive is grouped `archive/<site>/<cam>/YYYY/MM/`. Each cam declares its
   `site` in the config (`config.yaml`'s cams are `bluewood`; `config.pi.yaml`'s are
-  `seattle` and `north-carolina`), and `capture/main.py` writes to `archive_root / site /
+  `seattle`, `washington`, and `north-carolina`), and `capture/main.py` writes to
+  `archive_root / site /
   name`. Grouping by site keeps the two Bluewood cams together and separate from the
-  Seattle pipeline-development cams and the North Carolina cams — and lets a single config
+  Seattle pipeline-development cams, the Washington-state cams, and the North Carolina cams
+  — and lets a single config
   capture multiple sites at once (the Pi hand-off, `docs/open-questions.md` #1) without them
   colliding in one flat namespace.
 - Filenames are timestamps with microsecond precision (avoids collisions if two frames for
@@ -150,9 +168,10 @@ archive/
 ### Handing capture off to the Pi
 
 **Deployed and running** (see `docs/open-questions.md` #1): a systemd timer runs the same
-`capture/` code every 15 minutes on the Pi (hostname `timelapse-pi`), writing to local disk
-at `/var/lib/timelapse/archive` instead of committing to git (see storage below), and
-capturing all six cams. GitHub Actions ran in parallel for a ~1-2 week trial to confirm the
+`capture/` code on the Pi (hostname `timelapse-pi`), writing to local disk at
+`/var/lib/timelapse/archive` instead of committing to git (see storage below), and capturing
+all eight active cams (most every 15 minutes, unca-tower hourly). GitHub Actions ran in
+parallel for a ~1-2 week trial to confirm the
 Pi was reliable; that trial is complete, its schedule trigger is disabled, and manual
 `workflow_dispatch` stays available as an emergency fallback. The existing git-committed
 frames were migrated onto the Pi's storage so the archive has one home, and `archive/` is no
@@ -309,7 +328,8 @@ downloaded per day.
   stale" banner at the top of the page — off by default because some cams are intentionally
   disabled for stretches and the team didn't want that flagged on every visit. Site groups
   are ordered by the config's top-level `site_order` list (e.g. `[bluewood, seattle,
-  north-carolina]`); a site with archived frames but no entry in `site_order` (e.g. a
+  washington, north-carolina]`); a site with archived frames but no entry in `site_order`
+  (e.g. a
   decommissioned site) sorts after the listed ones, alphabetically.
 - **Full-history modal:** "full history →" opens a bottom-sheet with the same 13-week
   GitHub-style contribution grid the old design showed inline, now per-cam and hidden until
@@ -573,13 +593,14 @@ album/browsing model and 2025 API restrictions to app-created content are a poor
 exact-byte round-tripping that stale-frame hash detection depends on — but remains a good fit
 for finished videos (see deferred ideas below), which are naturally photo-library-shaped.
 
-**SD card capacity (documented, not yet executed):** the Pi currently boots from a 4GB card.
-With six cams now capturing (up from four), that card's runway is shorter than originally
-planned — see `docs/open-questions.md` #11 for the growth estimate. The migration process
-to a 64GB card is written up as a runbook in **`docs/sd-card-migration.md`**: a fresh OS
-install on the new card, `rsync` the existing archive over, verify, then physically swap
-cards — preferred over a full-disk clone since it also re-validates `deploy/pi/README.md`'s
-bring-up steps and avoids resizing a cloned partition table. Not yet executed.
+**SD card capacity (executed, 2026-07-30):** the Pi originally booted from a 4GB card. With
+six cams capturing (up from four), that card's runway had gotten shorter than originally
+planned — see `docs/open-questions.md` #11 for the growth estimate. The migration to a 64GB
+card followed the runbook in **`docs/sd-card-migration.md`**: a fresh OS install on the new
+card, `rsync` the existing archive over, verify, then physically swap cards — preferred over
+a full-disk clone since it also re-validated `deploy/pi/README.md`'s bring-up steps and
+avoided resizing a cloned partition table. With the extra headroom, the UNCA tower cam was
+re-enabled and several new speculative cams were added (see the Cams history above).
 
 ## Deferred / follow-on ideas
 

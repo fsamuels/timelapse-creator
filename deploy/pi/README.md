@@ -2,17 +2,18 @@
 
 Runs the capture job on a Raspberry Pi via systemd — the sole scheduled capture platform for
 this project. **This is deployed and running** on the Pi (hostname `timelapse-pi`), capturing
-**all six cams** (the two Bluewood cams, the two Seattle KING 5 dev cams, and two Pi-only
-North Carolina cams — UNCA tower and Nantahala Outdoor Center) from `capture/config.pi.yaml`.
+**all eight active cams** (the two Bluewood cams, three Seattle cams, two Washington-state
+cams, and the Pi-only UNCA tower North Carolina cam — Nantahala Outdoor Center stays
+commented out) from `capture/config.pi.yaml`.
 GitHub Actions previously ran this same capture job on a schedule too, in parallel, for a
 ~1-2 week hand-off trial (see `docs/open-questions.md` #1). That trial is complete: the
 schedule trigger is disabled, and `.github/workflows/capture.yml` now exists only as a manual
 (`workflow_dispatch`) emergency-capture fallback with nothing to commit day-to-day. The steps
 below document a from-scratch bring-up.
 
-**Running low on SD card space?** See `docs/sd-card-migration.md` for the documented
-4GB → 64GB migration process (`docs/open-questions.md` #11) — not yet executed, but written
-up for when the archive needs it.
+**Running low on SD card space?** See `docs/sd-card-migration.md` for the 4GB → 64GB
+migration process (`docs/open-questions.md` #11) — already executed once (2026-07-30), kept
+here as a reference for any future card swap.
 
 ## Steps
 
@@ -216,10 +217,11 @@ port-forwarding.
 
 ## Status
 
-Deployed and confirmed working on the Pi (`timelapse-pi`): the capture timer runs every
-15 minutes against `capture/config.pi.yaml` (all six cams), and the status page is live at
-`http://timelapse-pi.local:8080/`. The paths in the unit files match that deployment
-(`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust them if yours differ.
+Deployed and confirmed working on the Pi (`timelapse-pi`): the capture timer runs against
+`capture/config.pi.yaml` (all eight active cams, most at 15 min, unca-tower at 60 min), and
+the status page is live at `http://timelapse-pi.local:8080/`. The paths in the unit files
+match that deployment (`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust them if yours
+differ.
 
 `timelapse-update.timer` (auto-redeploy on merge to `main`, including unit-file changes
 like a capture cadence tweak) is written up above but not yet installed on `timelapse-pi` —
