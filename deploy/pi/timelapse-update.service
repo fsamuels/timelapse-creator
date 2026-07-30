@@ -1,0 +1,13 @@
+[Unit]
+Description=Pull and redeploy timelapse-creator from main
+
+[Service]
+# Runs as root (like timelapse-capture.service/timelapse-web.service) so it can
+# install unit files into /etc/systemd/system and restart units without a
+# password prompt when a merge changes deploy/pi/*.service or *.timer. Root
+# running `git pull` here requires a one-time
+#   git config --system --add safe.directory /opt/timelapse-creator
+# on the Pi (see deploy/pi/README.md) to satisfy git's ownership check.
+Type=oneshot
+WorkingDirectory=/opt/timelapse-creator
+ExecStart=/opt/timelapse-creator/deploy/pi/update.sh

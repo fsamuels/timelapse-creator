@@ -18,7 +18,7 @@ up for when the archive needs it.
 
 1. Install system dependencies, then clone the repo to `/opt/timelapse-creator` (adjust if
    you use a different path — see the placeholder-paths note below), and hand ownership to
-   your user so later updates (`deploy/pi/update.sh`) don't need `sudo` for `git pull`:
+   your user so a manual `deploy/pi/update.sh` run doesn't need `sudo` for `git pull`:
 
    ```
    sudo apt update
@@ -31,6 +31,19 @@ up for when the archive needs it.
    `python3-venv` installed separately on Debian-based systems — both are needed before step
    2 below. `build-essential`/`python3-dev`/`libyaml-dev` cover step 2's armv6 wheel-build
    caveat up front.
+
+   `timelapse-update.service` (step 4) instead runs `update.sh` as root, so root also
+   needs permission to `git pull` here despite the repo being owned by `$USER` — otherwise
+   git refuses with "dubious ownership". Grant it once:
+
+   ```
+   sudo git config --system --add safe.directory /opt/timelapse-creator
+   ```
+
+   One consequence: files touched by an automated (root) pull end up root-owned, which is
+   harmless for the automated path but means a later *manual* `git pull`/`update.sh` run as
+   `$USER` may hit permission errors on those files — `sudo chown -R $USER:$USER
+   /opt/timelapse-creator` clears it up if that happens.
 
 2. Create a virtualenv and install dependencies:
 
@@ -59,7 +72,8 @@ up for when the archive needs it.
 
    ```
    sudo cp deploy/pi/timelapse-capture.service deploy/pi/timelapse-capture.timer \
-           deploy/pi/timelapse-web.service /etc/systemd/system/
+           deploy/pi/timelapse-web.service deploy/pi/timelapse-update.service \
+           deploy/pi/timelapse-update.timer /etc/systemd/system/
    ```
 
 5. **Adjust the placeholder paths** in the unit files if your clone or venv don't live
@@ -67,12 +81,13 @@ up for when the archive needs it.
    lines in `timelapse-capture.service` assume that path, and `timelapse-web.service`
    serves `/var/lib/timelapse/www` (matching `web_output` in `capture/config.pi.yaml`).
 
-6. Reload systemd and enable the timer and the web server:
+6. Reload systemd and enable the timer, the web server, and the auto-update timer:
 
    ```
    sudo systemctl daemon-reload
    sudo systemctl enable --now timelapse-capture.timer
    sudo systemctl enable --now timelapse-web.service
+   sudo systemctl enable --now timelapse-update.timer
    ```
 
 7. Watch it run:
@@ -83,26 +98,31 @@ up for when the archive needs it.
 
 ## Updating the deployment
 
-Once a PR merges to `main`, redeploy the code change on the Pi with:
+`timelapse-update.timer` runs `deploy/pi/update.sh` every 10 minutes, so a PR merged to
+`main` is picked up automatically — no manual step needed, including for unit-file changes
+(e.g. changing the capture timer's `OnCalendar` interval). Each run pulls `main`
+(fast-forward only — refuses if the local repo is on another branch or has diverged); if
+that pull brings no new commits, the run stops there. Only when new commits actually
+landed does it reinstall dependencies from `requirements.txt` and regenerate the status
+page. If the pulled commits also touched any `deploy/pi/*.service` or `*.timer` file,
+`update.sh` copies the changed unit(s) into `/etc/systemd/system`, runs `systemctl
+daemon-reload`, and restarts `timelapse-capture.timer`, `timelapse-web.service`, and
+`timelapse-update.timer` — closing the loop that previously required SSHing in by hand.
+Most ticks are a no-op `git pull` and nothing else. Plain code changes need no restart:
+`timelapse-capture.service` re-reads the repo from disk on every timer tick, and
+`timelapse-web.service` just serves whatever static files are already there.
+
+To redeploy immediately instead of waiting for the next tick:
 
 ```
-deploy/pi/update.sh
+sudo systemctl start timelapse-update.service
 ```
 
-It pulls `main` (fast-forward only — refuses if you're on another branch or the local repo
-has diverged), reinstalls dependencies from `requirements.txt`, and regenerates the status
-page immediately rather than waiting for the next capture tick. Nothing needs restarting for
-a plain code change: `timelapse-capture.service` re-reads the repo from disk on every timer
-tick, and `timelapse-web.service` just serves whatever static files are already there.
-
-**Exception:** if the PR also changed `deploy/pi/*.service` or `*.timer`, `update.sh` won't
-pick that up — copy the unit files into place and restart the affected units yourself:
-
-```
-sudo cp deploy/pi/*.service deploy/pi/*.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart timelapse-capture.timer timelapse-web.service
-```
+or run `deploy/pi/update.sh` directly as `$USER` (it's the same script either way; the
+`safe.directory` config from step 1 covers both root and `$USER`, so neither hits git's
+"dubious ownership" check). A manual run only needs `sudo` if the pulled commits changed
+unit files, since installing them into `/etc/systemd/system` requires root either way.
+Watch it with `journalctl -u timelapse-update.service -f`.
 
 ## Status page
 
@@ -200,3 +220,8 @@ Deployed and confirmed working on the Pi (`timelapse-pi`): the capture timer run
 15 minutes against `capture/config.pi.yaml` (all six cams), and the status page is live at
 `http://timelapse-pi.local:8080/`. The paths in the unit files match that deployment
 (`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust them if yours differ.
+
+`timelapse-update.timer` (auto-redeploy on merge to `main`, including unit-file changes
+like a capture cadence tweak) is written up above but not yet installed on `timelapse-pi` —
+run the `safe.directory` config from step 1, copy the unit into place per the "Copy the
+unit files" step, and `enable --now` it to turn on automatic deploys.

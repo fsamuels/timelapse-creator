@@ -2,16 +2,22 @@
 set -euo pipefail
 
 # Redeploys the Pi after a PR merges to main: pulls the latest commit,
-# reinstalls dependencies if requirements.txt changed, and regenerates the
-# status page immediately instead of waiting for the next capture tick.
+# reinstalls dependencies if requirements.txt changed, regenerates the status
+# page, and — if the PR touched any deploy/pi/*.service or *.timer file —
+# installs the changed units and restarts them (e.g. picking up a capture
+# cadence change). If the pull brings no new commits, all of the above is
+# skipped — safe to run this on a timer without doing needless work every tick.
 #
 # Run this on the Pi itself:
 #   deploy/pi/update.sh [config]
 # config defaults to capture/config.pi.yaml.
 #
-# Does NOT touch systemd unit files — if a change also modifies
-# deploy/pi/*.service or *.timer, copy them into place and restart the
-# affected units yourself (see deploy/pi/README.md).
+# Runs as root via timelapse-update.timer/.service so it can install unit
+# files and restart units without a password prompt. Root running `git pull`
+# in a repo owned by another user needs a one-time
+#   git config --system --add safe.directory /opt/timelapse-creator
+# (see deploy/pi/README.md) — without it git refuses with "dubious
+# ownership". Expect files touched by an automated pull to end up root-owned.
 
 cd "$(dirname "$0")/../.."
 
@@ -23,8 +29,17 @@ if [ "$BRANCH" != "main" ]; then
   exit 1
 fi
 
+BEFORE_SHA="$(git rev-parse HEAD)"
+
 echo "==> Pulling latest main"
 git pull origin main --ff-only
+
+AFTER_SHA="$(git rev-parse HEAD)"
+
+if [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
+  echo "==> Already up to date ($AFTER_SHA); nothing to do"
+  exit 0
+fi
 
 echo "==> Installing dependencies"
 .venv/bin/pip install -q -r requirements.txt
@@ -32,7 +47,13 @@ echo "==> Installing dependencies"
 echo "==> Regenerating the status page"
 .venv/bin/python -m web.generate --config "$CONFIG"
 
-echo "==> Done. If deploy/pi/*.service or *.timer changed, also run:"
-echo "      sudo cp deploy/pi/*.service deploy/pi/*.timer /etc/systemd/system/"
-echo "      sudo systemctl daemon-reload"
-echo "      sudo systemctl restart timelapse-capture.timer timelapse-web.service"
+CHANGED_UNITS="$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" -- 'deploy/pi/*.service' 'deploy/pi/*.timer')"
+if [ -n "$CHANGED_UNITS" ]; then
+  echo "==> Unit file(s) changed, installing and restarting:"
+  echo "$CHANGED_UNITS"
+  sudo cp deploy/pi/*.service deploy/pi/*.timer /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl restart timelapse-capture.timer timelapse-web.service timelapse-update.timer
+fi
+
+echo "==> Done"
