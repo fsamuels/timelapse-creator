@@ -49,6 +49,12 @@
   interval (an "hourly" cam settling into running every 75 minutes). Bucketing by absolute
   time is immune to this since due-ness never depends on when the previous run finished. The
   North Carolina cams are set to `interval_minutes: 60`; everything else stays at 15.
+- **Card migration to 64GB, then more cams (2026-07-30).** With the SD card migration
+  (`docs/open-questions.md` #11) done, the UNCA tower cam was re-enabled, SeaTac was added
+  under `seattle`, and a new `washington` site was created for Washington-state cams that
+  aren't Seattle-specific: Mount Rainier (moved out of `seattle`) and Kalaloch Lodge, both
+  `interval_minutes: 15`. Speculative additions while there's card headroom — expect some to
+  get trimmed later. The Pi now captures eight cams total.
 
 ## Architecture: two decoupled pieces
 
@@ -114,6 +120,16 @@ archive/
     queenanne/
       2026/07/
         ...
+    sea-tac/
+      2026/07/
+        ...
+  washington/
+    mount-rainier/
+      2026/07/
+        ...
+    kalaloch-lodge/
+      2026/07/
+        ...
   north-carolina/
     unca-tower/
       2026/07/
@@ -125,9 +141,11 @@ archive/
 
 - The archive is grouped `archive/<site>/<cam>/YYYY/MM/`. Each cam declares its
   `site` in the config (`config.yaml`'s cams are `bluewood`; `config.pi.yaml`'s are
-  `seattle` and `north-carolina`), and `capture/main.py` writes to `archive_root / site /
+  `seattle`, `washington`, and `north-carolina`), and `capture/main.py` writes to
+  `archive_root / site /
   name`. Grouping by site keeps the two Bluewood cams together and separate from the
-  Seattle pipeline-development cams and the North Carolina cams — and lets a single config
+  Seattle pipeline-development cams, the Washington-state cams, and the North Carolina cams
+  — and lets a single config
   capture multiple sites at once (the Pi hand-off, `docs/open-questions.md` #1) without them
   colliding in one flat namespace.
 - Filenames are timestamps with microsecond precision (avoids collisions if two frames for
@@ -309,7 +327,8 @@ downloaded per day.
   stale" banner at the top of the page — off by default because some cams are intentionally
   disabled for stretches and the team didn't want that flagged on every visit. Site groups
   are ordered by the config's top-level `site_order` list (e.g. `[bluewood, seattle,
-  north-carolina]`); a site with archived frames but no entry in `site_order` (e.g. a
+  washington, north-carolina]`); a site with archived frames but no entry in `site_order`
+  (e.g. a
   decommissioned site) sorts after the listed ones, alphabetically.
 - **Full-history modal:** "full history →" opens a bottom-sheet with the same 13-week
   GitHub-style contribution grid the old design showed inline, now per-cam and hidden until

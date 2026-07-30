@@ -339,10 +339,12 @@ as a from-scratch verification that `deploy/pi/README.md`'s bring-up steps still
 sidesteps partition-resize fuss).
 
 **Update, 2026-07-30:** migration executed — the Pi is now on the 64GB card. With headroom
-back, the UNCA tower cam was re-enabled and two more Seattle-area cams (Mount Rainier,
-SeaTac) were added, both at the standard 15-min cadence (question 10, question 12). Keep
-watching actual growth via the status page's per-cam and total disk-usage figures
-(`web/generate.py`).
+back, the UNCA tower cam was re-enabled, SeaTac was added under `seattle`, and a new
+`washington` site was created for Washington-state cams that aren't Seattle-specific: Mount
+Rainier (moved out of `seattle`) and Kalaloch Lodge (Olympic coast). All new cams run at the
+standard 15-min cadence (question 10, question 12). These are speculative additions while
+there's headroom — expect some to get trimmed later. Keep watching actual growth via the
+status page's per-cam and total disk-usage figures (`web/generate.py`).
 
 ## 12. Next concrete steps
 
@@ -358,9 +360,10 @@ watching actual growth via the status page's per-cam and total disk-usage figure
       hardware, in the `<site>/<cam>/` layout
 - [x] Add the two North Carolina cams (question 10) — `capture/config.pi.yaml`, Pi-only
 - [x] Execute the SD card migration (question 11) — Pi is now on the 64GB card
-- [x] Re-enable the UNCA tower cam and add two Seattle-area cams (Mount Rainier, SeaTac)
-      now that the card migration freed up headroom (question 10) —
-      `capture/config.pi.yaml`
+- [x] Re-enable the UNCA tower cam and add SeaTac (question 10) now that the card migration
+      freed up headroom — `capture/config.pi.yaml`
+- [x] Add a new `washington` site for cams that aren't Seattle-specific — Mount Rainier
+      (moved out of `seattle`) and Kalaloch Lodge — `capture/config.pi.yaml`
 - [x] Migrate the existing git-committed Bluewood frames onto the Pi's storage so the archive
       has one home (question 1, question 5)
 - [ ] Pick a bucket provider (question 5) — evaluate Backblaze B2 pricing/fit against the
