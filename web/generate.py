@@ -9,7 +9,10 @@ contribution grid, opened as a bottom-sheet "modal" implemented purely with CSS
 
 Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
 so it's directly browsable, reports per-cam and total disk usage, and shows a
-footer of host stats (uptime, memory, load average — see ``system_stats``).
+footer of host stats (uptime, memory, load average — see ``system_stats``) plus
+a deployment marker (commit sha8 and date — see ``read_git_info``), so it's
+obvious which commit is actually live given the Pi auto-updates from ``main``
+on a 10-minute timer (see ``deploy/pi/update.sh``).
 
 Designed to run on the Pi after each capture (see deploy/pi/), regenerating the
 page — no persistent app server. It reads ``archive_dir`` from the config, so it
@@ -23,6 +26,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -32,6 +36,7 @@ from capture.archive import PACIFIC, parse_frame_time
 from capture.capture_log import latest_outcomes, read_capture_log
 
 CONFIG_PATH = Path(__file__).parent.parent / "capture" / "config.yaml"
+REPO_DIR = Path(__file__).parent.parent
 DEFAULT_OUTPUT = "site/index.html"
 HEATMAP_WEEKS = 13  # ~a quarter, the full-history window shown per cam
 RECENT_DAYS = 31  # the compact recent-activity strip on each cam card
@@ -136,6 +141,35 @@ def system_stats(uptime_path="/proc/uptime", meminfo_path="/proc/meminfo", load_
         "memory": read_memory_usage(meminfo_path),
         "load_avg": load_avg,
     }
+
+
+def read_git_info(repo_dir=REPO_DIR, run_fn=None):
+    """``{"sha8", "commit_date"}`` for the running checkout's HEAD commit.
+
+    Used for the footer's deployment marker — the Pi auto-updates from ``main``
+    on a 10-minute timer (see ``deploy/pi/update.sh``), so knowing which commit
+    is actually live is otherwise a `git log` away. None if repo_dir isn't a
+    git checkout or git isn't installed; run_fn is injectable for tests.
+    """
+    run_fn = run_fn or _run_git_log
+    try:
+        output = run_fn(repo_dir)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    sha8, _, commit_date = output.strip().partition("\t")
+    if not sha8 or not commit_date:
+        return None
+    return {"sha8": sha8, "commit_date": commit_date}
+
+
+def _run_git_log(repo_dir):
+    return subprocess.run(
+        ["git", "log", "-1", "--format=%h\t%cs", "--abbrev=8"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
 
 def ensure_archive_link(www_dir, archive_dir):
@@ -682,11 +716,13 @@ def _history_modal_html(cam):
 
 
 def _footer_html(system):
-    """Render the host-stats footer line: uptime, memory, load average.
+    """Render the footer: host stats (uptime, memory, load average) on one
+    line, then a deployment marker (commit sha8 and date) on a second.
 
-    Each stat is included only if its underlying read succeeded (see
-    ``system_stats``), so the footer degrades gracefully rather than showing
-    a fabricated value — e.g. on a dev machine with no /proc/meminfo.
+    Each stat/marker is included only if its underlying read succeeded (see
+    ``system_stats`` / ``read_git_info``), so the footer degrades gracefully
+    rather than showing a fabricated value — e.g. on a dev machine with no
+    /proc/meminfo, or a non-git deployment.
     """
     bits = []
     if system.get("uptime_seconds") is not None:
@@ -703,9 +739,18 @@ def _footer_html(system):
     if load_avg:
         l1, l5, l15 = load_avg
         bits.append(f"Load {l1:.2f}, {l5:.2f}, {l15:.2f}")
-    if not bits:
+
+    lines = []
+    if bits:
+        lines.append(" &middot; ".join(bits))
+    git = system.get("git")
+    if git:
+        lines.append(
+            f'Deployed {html.escape(git["sha8"])} &middot; {html.escape(git["commit_date"])}'
+        )
+    if not lines:
         return ""
-    return f'<div class="footer">{" &middot; ".join(bits)}</div>'
+    return f'<div class="footer">{"<br>".join(lines)}</div>'
 
 
 def render_html(page_data, now, show_stale_banner=False, system=None):
@@ -820,9 +865,9 @@ def main():
         cam_config=config.get("cams"),
         site_order=config.get("site_order"),
     )
-    html_doc = render_html(
-        page_data, now, show_stale_banner=show_stale_banner, system=system_stats()
-    )
+    system = system_stats()
+    system["git"] = read_git_info()
+    html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner, system=system)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html_doc)

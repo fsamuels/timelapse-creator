@@ -744,6 +744,42 @@ def test_system_stats_load_avg_unavailable_is_none(tmp_path):
     assert stats["load_avg"] is None
 
 
+def test_read_git_info_parses_sha8_and_commit_date():
+    def fake_run(repo_dir):
+        assert repo_dir == "some/repo"
+        return "a1b2c3d4\t2026-07-29\n"
+
+    info = generate.read_git_info(repo_dir="some/repo", run_fn=fake_run)
+
+    assert info == {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"}
+
+
+def test_read_git_info_not_a_repo_is_none():
+    def fake_run(repo_dir):
+        raise generate.subprocess.CalledProcessError(128, ["git"])
+
+    assert generate.read_git_info(repo_dir="some/repo", run_fn=fake_run) is None
+
+
+def test_read_git_info_git_not_installed_is_none():
+    def fake_run(repo_dir):
+        raise OSError("git not found")
+
+    assert generate.read_git_info(repo_dir="some/repo", run_fn=fake_run) is None
+
+
+def test_render_html_footer_shows_deployed_sha8_and_commit_date(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {"git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"}}
+    doc = generate.render_html(data, now, system=system)
+
+    assert '<div class="footer">' in doc
+    assert "Deployed a1b2c3d4 &middot; 2026-07-29" in doc
+
+
 def test_human_uptime_days_and_hours():
     assert generate._human_uptime(3 * 86400 + 4 * 3600) == "3d 4h"
 
