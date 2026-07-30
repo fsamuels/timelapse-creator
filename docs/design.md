@@ -339,6 +339,16 @@ downloaded per day.
   no client-side calendar logic to duplicate. The close link/scrim both point at `href="#!"`
   rather than `href="#"` — a bare `#` also targets the document top and yanks the page's
   scroll position, which `#!` (matching no element) avoids.
+- **Daily drill-down:** clicking a day cell in the full-history grid reveals that day's
+  hourly (24-cell) breakdown directly below the grid, in the same modal — same `_level()`
+  bucketing as the other heatmaps, but scoped to that single day's own busiest hour rather
+  than the cam's all-time peak. Built the same no-`<script>`-tag way as the rest of the
+  page's interactivity: every non-empty day's sub-grid is pre-rendered server-side into a
+  hidden `<div>`, and a small inline `onclick` (matching the existing tap-to-reveal-tooltip
+  pattern) toggles it visible and hides whichever day was previously shown. Days with zero
+  frames get no sub-grid at all — nothing to show, and it keeps output size proportional to
+  actual archive data rather than a fixed ~91-day cost per cam regardless of how sparse the
+  archive is.
 - **Activity leveling:** both the 31-day strip and the full-history grid use the same
   `_level()` bucketing, now a simple off/low/high (3-color) scale rather than the old
   5-color one — visually quieter, matching the reference's intent for the strip to read as
@@ -364,6 +374,17 @@ downloaded per day.
   rest of the page; see `docs/open-questions.md` #8. A proper gallery view (paginated by
   day/cam with thumbnails, generated the same way as the heatmap) is a natural next step on
   top of this rather than a new access decision.
+- **Footer:** host stats (uptime, memory, load average, read straight from `/proc` rather
+  than a library like `psutil` — a C-extension dependency isn't guaranteed to have a
+  prebuilt wheel on a Pi Zero W's armv6), how long this run took to gather its data
+  (`build_page_data` + `system_stats` + `read_git_info` — the archive scan, capture log,
+  `/proc` reads, and git subprocess; excludes the page's own HTML-string assembly, which is
+  pure CPU and comparatively negligible) so a slow regeneration can be diagnosed as I/O vs.
+  added-feature overhead, and a deployment marker (commit sha8 + date, from `git log`) so
+  it's obvious which commit is actually live given the Pi auto-updates from `main` on a
+  10-minute timer. Each stat/marker is included only if its underlying read succeeded, so
+  the footer degrades gracefully (e.g. a non-git deployment) rather than showing a
+  fabricated value.
 - **Remote access:** not built now; Tailscale is the documented future option, and would also
   cover remote SSH to the Pi for maintenance, not just this page.
 
