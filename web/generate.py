@@ -566,20 +566,20 @@ a{{text-decoration:none}}
 .cam-photo-link{{position:absolute;inset:0;display:block}}
 .cam-photo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}
 .cam-photo-label{{position:absolute;top:10px;left:12px;font:500 9px {_FONT_STACK};
-  color:rgba(255,255,255,.25);letter-spacing:.05em}}
+  color:rgba(255,255,255,.5);letter-spacing:.05em}}
 .cam-photo-gradient{{position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(to top,rgba(0,0,0,.82),transparent 60%)}}
 .cam-photo-overlay{{position:absolute;left:14px;right:14px;bottom:10px;display:flex;
   align-items:flex-end;justify-content:space-between;gap:8px;pointer-events:none}}
 .cam-photo-overlay a{{pointer-events:auto}}
 .cam-name{{font:700 16px {_FONT_STACK};color:#fff}}
-.cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.65);margin-top:2px}}
+.cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.85);margin-top:2px}}
 .cam-status{{font:600 9.5px {_FONT_STACK};padding:3px 9px;border-radius:20px;flex:none}}
 .cam-status.stale{{color:#2a1a0e;background:#f5a524}}
 .cam-status.live{{color:#0a2e12;background:#3fb950}}
 .cam-body{{padding:12px 14px 14px}}
 .cam-meta{{display:flex;gap:14px;flex-wrap:wrap;font:400 10.5px {_FONT_STACK};
-  color:rgba(255,255,255,.45)}}
+  color:rgba(255,255,255,.7)}}
 .cam-heatmap-row{{display:flex;align-items:center;justify-content:space-between;
   flex-wrap:wrap;margin-top:10px;gap:6px 10px}}
 .recent-strip{{display:grid;grid-template-columns:repeat({RECENT_DAYS},6px);
@@ -588,7 +588,7 @@ a{{text-decoration:none}}
   cursor:pointer}}
 .recent-cell.l1{{background:#1e3a8a}}
 .recent-cell.l2{{background:#3b82f6}}
-.recent-info{{min-height:1.2em;font:400 10px {_FONT_STACK};color:rgba(255,255,255,.35);
+.recent-info{{min-height:1.2em;font:400 10px {_FONT_STACK};color:rgba(255,255,255,.6);
   margin-top:6px}}
 .history-btn{{border:none;background:none;font:500 10.5px {_FONT_STACK};color:#7dd3fc;
   cursor:pointer;white-space:nowrap;padding:0}}
@@ -630,7 +630,7 @@ a{{text-decoration:none}}
 .day-hour-labels{{display:flex;justify-content:space-between;margin-top:5px;
   font:400 9px {_FONT_STACK};color:rgba(255,255,255,.3)}}
 .footer{{margin-top:28px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);
-  font:400 10px {_FONT_STACK};color:rgba(255,255,255,.3);text-align:center}}
+  font:400 12px {_FONT_STACK};color:rgba(255,255,255,.65);text-align:center;line-height:1.7}}
 """
 
 _WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
@@ -829,36 +829,33 @@ def _history_modal_html(cam):
 
 
 def _footer_html(system):
-    """Render the footer: host stats (uptime, memory, load average, page
-    generation time) on one line, then a deployment marker (commit sha8 and
-    date) on a second.
+    """Render the footer: one host stat per line (uptime, memory, load
+    average, page generation time), then a deployment marker (commit sha8
+    and date) on its own line after.
 
     Each stat/marker is included only if its underlying read succeeded (see
     ``system_stats`` / ``read_git_info``), so the footer degrades gracefully
     rather than showing a fabricated value — e.g. on a dev machine with no
     /proc/meminfo, or a non-git deployment.
     """
-    bits = []
+    lines = []
     if system.get("uptime_seconds") is not None:
-        bits.append(f'Uptime {html.escape(_human_uptime(system["uptime_seconds"]))}')
+        lines.append(f'Uptime {html.escape(_human_uptime(system["uptime_seconds"]))}')
     memory = system.get("memory")
     if memory:
         used_kb = memory["total_kb"] - memory["available_kb"]
         pct = used_kb / memory["total_kb"] * 100 if memory["total_kb"] else 0
-        bits.append(
+        lines.append(
             f"Mem {html.escape(_human_bytes(used_kb * 1024))} / "
             f'{html.escape(_human_bytes(memory["total_kb"] * 1024))} ({pct:.0f}%)'
         )
     load_avg = system.get("load_avg")
     if load_avg:
         l1, l5, l15 = load_avg
-        bits.append(f"Load {l1:.2f}, {l5:.2f}, {l15:.2f}")
+        lines.append(f"Load {l1:.2f}, {l5:.2f}, {l15:.2f}")
     if system.get("generate_seconds") is not None:
-        bits.append(f'Generated in {html.escape(_human_duration(system["generate_seconds"]))}')
+        lines.append(f'Generated in {html.escape(_human_duration(system["generate_seconds"]))}')
 
-    lines = []
-    if bits:
-        lines.append(" &middot; ".join(bits))
     git = system.get("git")
     if git:
         lines.append(

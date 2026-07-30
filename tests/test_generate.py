@@ -918,6 +918,30 @@ def test_render_html_footer_shows_uptime_memory_and_load(tmp_path):
     assert "Load 0.15, 0.09, 0.05" in doc
 
 
+def test_render_html_footer_puts_each_stat_on_its_own_line(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {
+        "uptime_seconds": 3 * 86400 + 4 * 3600,
+        "memory": {"total_kb": 1000000, "available_kb": 400000},
+        "load_avg": (0.15, 0.09, 0.05),
+        "generate_seconds": 0.35,
+        "git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"},
+    }
+    doc = generate.render_html(data, now, system=system)
+
+    footer = doc.split('<div class="footer">')[1].split("</div>")[0]
+    assert footer.split("<br>") == [
+        "Uptime 3d 4h",
+        "Mem 585.9 MB / 976.6 MB (60%)",
+        "Load 0.15, 0.09, 0.05",
+        "Generated in 350ms",
+        "Deployed a1b2c3d4 &middot; 2026-07-29",
+    ]
+
+
 def test_render_html_footer_omitted_without_system_stats(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
