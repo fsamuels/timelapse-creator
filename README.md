@@ -45,8 +45,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   `workflow_dispatch` manual emergency-capture fallback in GitHub Actions; not on a schedule
   anymore)
 - `capture/config.pi.yaml` — the Pi's config: two Seattle KING 5 cams, added to keep
-  developing the pipeline while Bluewood was off-grid, and the two Bluewood cams for the
-  hand-off trial, plus a `capture_log` path. Two North Carolina cams — WLOS-hosted PNG
+  developing the pipeline while Bluewood was off-grid, and the two Bluewood cams (added for
+  the now-completed Pi hand-off trial), plus a `capture_log` path. Two North Carolina cams — WLOS-hosted PNG
   snapshots of the UNCA tower and the Nantahala Outdoor Center, Pi-only — are defined but
   commented out pending the SD card migration (`docs/sd-card-migration.md`)
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
@@ -157,8 +157,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 
 ## Not implemented yet
 
-- Long-term storage / cloud backup — Pi frames live on local disk and GitHub Actions frames
-  in git; the `rclone` bucket sync isn't set up yet (see `docs/open-questions.md` #5)
+- Long-term storage / cloud backup — Pi frames live on local disk only; the `rclone` bucket
+  sync isn't set up yet (see `docs/open-questions.md` #5). The pre-Pi Bluewood frames GitHub
+  Actions committed during the hand-off trial remain in git history, not the live archive.
 - SD card migration (4GB → 64GB) — process is documented
   ([docs/sd-card-migration.md](docs/sd-card-migration.md)) but not yet executed (see
   `docs/open-questions.md` #11)

@@ -1,12 +1,14 @@
 # Pi bring-up
 
-Runs the capture job on a Raspberry Pi via systemd instead of GitHub Actions. **This is
-deployed and running** on the Pi (hostname `timelapse-pi`), capturing **all six cams** (the
-two Bluewood cams, the two Seattle KING 5 dev cams, and two Pi-only North Carolina cams —
-UNCA tower and Nantahala Outdoor Center) from `capture/config.pi.yaml`. GitHub Actions
-(`.github/workflows/capture.yml`) still captures Bluewood in parallel during the hand-off
-trial (see `docs/open-questions.md` #1); the two capture paths run independently and nothing
-here disables the Actions schedule. The steps below document a from-scratch bring-up.
+Runs the capture job on a Raspberry Pi via systemd — the sole scheduled capture platform for
+this project. **This is deployed and running** on the Pi (hostname `timelapse-pi`), capturing
+**all six cams** (the two Bluewood cams, the two Seattle KING 5 dev cams, and two Pi-only
+North Carolina cams — UNCA tower and Nantahala Outdoor Center) from `capture/config.pi.yaml`.
+GitHub Actions previously ran this same capture job on a schedule too, in parallel, for a
+~1-2 week hand-off trial (see `docs/open-questions.md` #1). That trial is complete: the
+schedule trigger is disabled, and `.github/workflows/capture.yml` now exists only as a manual
+(`workflow_dispatch`) emergency-capture fallback with nothing to commit day-to-day. The steps
+below document a from-scratch bring-up.
 
 **Running low on SD card space?** See `docs/sd-card-migration.md` for the documented
 4GB → 64GB migration process (`docs/open-questions.md` #11) — not yet executed, but written
@@ -14,14 +16,21 @@ up for when the archive needs it.
 
 ## Steps
 
-1. Clone the repo to `/opt/timelapse-creator` (adjust if you use a different path — see
-   the placeholder-paths note below), then hand ownership to your user so later updates
-   (`deploy/pi/update.sh`) don't need `sudo` for `git pull`:
+1. Install system dependencies, then clone the repo to `/opt/timelapse-creator` (adjust if
+   you use a different path — see the placeholder-paths note below), and hand ownership to
+   your user so later updates (`deploy/pi/update.sh`) don't need `sudo` for `git pull`:
 
    ```
+   sudo apt update
+   sudo apt install -y git python3-venv python3-pip build-essential python3-dev libyaml-dev
    sudo git clone https://github.com/<owner>/timelapse-creator.git /opt/timelapse-creator
    sudo chown -R $USER:$USER /opt/timelapse-creator
    ```
+
+   Raspberry Pi OS Lite doesn't ship `git` by default, and `python3 -m venv` needs
+   `python3-venv` installed separately on Debian-based systems — both are needed before step
+   2 below. `build-essential`/`python3-dev`/`libyaml-dev` cover step 2's armv6 wheel-build
+   caveat up front.
 
 2. Create a virtualenv and install dependencies:
 
@@ -34,9 +43,9 @@ up for when the archive needs it.
    **armv6 wheel caveat (Pi Zero W):** the original Pi Zero W is armv6, which doesn't
    always have prebuilt wheels on PyPI for every package version. `requests` and
    `PyYAML` are both small pure-Python-ish packages that build fine from source if pip
-   falls back to a source build — expect it to take a little longer, not to fail. If it
-   does fail, install build essentials first (`sudo apt install build-essential
-   python3-dev libyaml-dev`).
+   falls back to a source build — expect it to take a little longer, not to fail. Step 1's
+   `build-essential`/`python3-dev`/`libyaml-dev` install already covers what a source build
+   needs, so this shouldn't require any extra intervention.
 
 3. Create the local-disk storage directory used by `capture/config.pi.yaml`
    (`archive_dir`, `capture_log`, and the status page's `web_output`):
