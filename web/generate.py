@@ -4,15 +4,21 @@ Reads the frame archive (via the timestamped filenames) and the persisted captur
 log, then writes a single self-contained HTML page: a disk/burn-rate summary up
 top, then per-cam cards grouped by site showing the last frame, a recent-activity
 strip, and a link to that cam's full multi-month history (a GitHub-style
-contribution grid, opened as a bottom-sheet "modal" implemented purely with CSS
-``:target`` — no ``<script>`` tag, keeping the page dependency-free).
+contribution grid, opened as a bottom-sheet "modal" whose interactivity — the
+open/close and the day-tap-for-detail behavior — is a mix of CSS ``:target``
+and small inline ``onclick`` attributes; there's no ``<script>`` tag, keeping
+the page dependency-free). Clicking a day with frames in that grid reveals an
+hourly drill-down for just that day (see ``hourly_counts`` /
+``day_details_for_grid``); days with no frames are skipped rather than given
+an empty sub-grid.
 
 Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
 so it's directly browsable, reports per-cam and total disk usage, and shows a
-footer of host stats (uptime, memory, load average — see ``system_stats``) plus
-a deployment marker (commit sha8 and date — see ``read_git_info``), so it's
-obvious which commit is actually live given the Pi auto-updates from ``main``
-on a 10-minute timer (see ``deploy/pi/update.sh``).
+footer of host stats (uptime, memory, load average, and how long this run took
+to gather its data — see ``system_stats``) plus a deployment marker (commit
+sha8 and date — see ``read_git_info``), so it's obvious which commit is
+actually live given the Pi auto-updates from ``main`` on a 10-minute timer
+(see ``deploy/pi/update.sh``).
 
 Designed to run on the Pi after each capture (see deploy/pi/), regenerating the
 page — no persistent app server. It reads ``archive_dir`` from the config, so it
@@ -27,6 +33,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -224,6 +231,20 @@ def daily_counts(frames):
     return counts
 
 
+def hourly_counts(frames):
+    """Count frames per capture date and hour (``{date: {hour: int}}``).
+
+    A single pass alongside ``daily_counts`` rather than re-scanning frames
+    per day; powers the daily drill-down heat map.
+    """
+    counts = {}
+    for frame in frames:
+        t = parse_frame_time(frame)
+        day_counts = counts.setdefault(t.date(), {})
+        day_counts[t.hour] = day_counts.get(t.hour, 0) + 1
+    return counts
+
+
 def cam_health(frames, outcome, now, stale_after):
     """Summarize one cam's health for the status view."""
     last_time = parse_frame_time(frames[-1]) if frames else None
@@ -282,6 +303,39 @@ def heatmap_grid(counts, end_date, weeks=HEATMAP_WEEKS, levels=HEATMAP_LEVELS):
     return grid
 
 
+def hour_cells_for_day(hour_counts, levels=HEATMAP_LEVELS):
+    """Build a single day's 24 hourly cells, leveled relative to that day's
+    own busiest hour (each day's drill-down reads on its own scale, not the
+    cam's all-time peak).
+    """
+    peak = max(hour_counts.values(), default=0)
+    return [
+        {
+            "hour": h,
+            "count": hour_counts.get(h, 0),
+            "level": _level(hour_counts.get(h, 0), peak, levels),
+        }
+        for h in range(24)
+    ]
+
+
+def day_details_for_grid(hourly, grid):
+    """Per-day hourly drill-down data (``{date: [24 cells]}``) for days in
+    ``grid`` that actually have frames.
+
+    Days with zero frames are omitted rather than given an all-empty
+    sub-grid — nothing to show, and it keeps output size proportional to
+    actual archive data instead of the full ~91-day window every time.
+    """
+    details = {}
+    for week in grid:
+        for cell in week:
+            day = cell["date"]
+            if not cell["future"] and day in hourly:
+                details[day] = hour_cells_for_day(hourly[day])
+    return details
+
+
 def recent_strip(counts, end_date, days=RECENT_DAYS, levels=HEATMAP_LEVELS):
     """Build the compact ``days``-long activity strip shown on each cam card.
 
@@ -333,6 +387,13 @@ def _human_ago(delta):
     if hours < 48:
         return f"{hours} hr ago"
     return f"{hours // 24} days ago"
+
+
+def _human_duration(seconds):
+    """Render a duration like '428ms' or '1.8s'."""
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+    return f"{seconds:.1f}s"
 
 
 def _human_runway(days):
@@ -422,6 +483,7 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
             if health["is_stale"]:
                 stale_count += 1
             cam_bytes = frame_bytes(frames)
+            full_grid = heatmap_grid(counts, today)
             cam_views.append(
                 {
                     "name": cam,
@@ -429,7 +491,8 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                     "url": (cam_cfg or {}).get("url"),
                     "health": health,
                     "recent": recent_strip(counts, today),
-                    "full_grid": heatmap_grid(counts, today),
+                    "full_grid": full_grid,
+                    "day_details": day_details_for_grid(hourly_counts(frames), full_grid),
                     "bytes": cam_bytes,
                     "avg_bytes": cam_bytes / len(frames) if frames else 0,
                     "thumb_url": thumb_url(frames, archive_dir),
@@ -503,20 +566,20 @@ a{{text-decoration:none}}
 .cam-photo-link{{position:absolute;inset:0;display:block}}
 .cam-photo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}
 .cam-photo-label{{position:absolute;top:10px;left:12px;font:500 9px {_FONT_STACK};
-  color:rgba(255,255,255,.25);letter-spacing:.05em}}
+  color:rgba(255,255,255,.5);letter-spacing:.05em}}
 .cam-photo-gradient{{position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(to top,rgba(0,0,0,.82),transparent 60%)}}
 .cam-photo-overlay{{position:absolute;left:14px;right:14px;bottom:10px;display:flex;
   align-items:flex-end;justify-content:space-between;gap:8px;pointer-events:none}}
 .cam-photo-overlay a{{pointer-events:auto}}
 .cam-name{{font:700 16px {_FONT_STACK};color:#fff}}
-.cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.65);margin-top:2px}}
+.cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.85);margin-top:2px}}
 .cam-status{{font:600 9.5px {_FONT_STACK};padding:3px 9px;border-radius:20px;flex:none}}
 .cam-status.stale{{color:#2a1a0e;background:#f5a524}}
 .cam-status.live{{color:#0a2e12;background:#3fb950}}
 .cam-body{{padding:12px 14px 14px}}
 .cam-meta{{display:flex;gap:14px;flex-wrap:wrap;font:400 10.5px {_FONT_STACK};
-  color:rgba(255,255,255,.45)}}
+  color:rgba(255,255,255,.7)}}
 .cam-heatmap-row{{display:flex;align-items:center;justify-content:space-between;
   flex-wrap:wrap;margin-top:10px;gap:6px 10px}}
 .recent-strip{{display:grid;grid-template-columns:repeat({RECENT_DAYS},6px);
@@ -525,7 +588,7 @@ a{{text-decoration:none}}
   cursor:pointer}}
 .recent-cell.l1{{background:#1e3a8a}}
 .recent-cell.l2{{background:#3b82f6}}
-.recent-info{{min-height:1.2em;font:400 10px {_FONT_STACK};color:rgba(255,255,255,.35);
+.recent-info{{min-height:1.2em;font:400 10px {_FONT_STACK};color:rgba(255,255,255,.6);
   margin-top:6px}}
 .history-btn{{border:none;background:none;font:500 10.5px {_FONT_STACK};color:#7dd3fc;
   cursor:pointer;white-space:nowrap;padding:0}}
@@ -558,8 +621,16 @@ a{{text-decoration:none}}
 .full-cell.l2{{background:#3b82f6}}
 .full-cell.future{{background:transparent;cursor:default}}
 .modal-hint{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.35);margin-top:14px}}
+.day-detail{{margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}}
+.day-detail-title{{font:600 11px {_FONT_STACK};color:rgba(255,255,255,.6);margin-bottom:8px}}
+.day-hour-grid{{display:grid;grid-template-columns:repeat(24,1fr);gap:3px}}
+.hour-cell{{height:18px;border-radius:3px;background:rgba(255,255,255,.06)}}
+.hour-cell.l1{{background:#1e3a8a}}
+.hour-cell.l2{{background:#3b82f6}}
+.day-hour-labels{{display:flex;justify-content:space-between;margin-top:5px;
+  font:400 9px {_FONT_STACK};color:rgba(255,255,255,.3)}}
 .footer{{margin-top:28px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);
-  font:400 10px {_FONT_STACK};color:rgba(255,255,255,.3);text-align:center}}
+  font:400 12px {_FONT_STACK};color:rgba(255,255,255,.65);text-align:center;line-height:1.7}}
 """
 
 _WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
@@ -594,26 +665,63 @@ def _day_title(count, day):
     return f'{count} image{"s" if count != 1 else ""} on {day.isoformat()}'
 
 
-def _full_grid_html(grid):
+def _hour_title(count, hour, day):
+    """'N images at HH:00 on YYYY-MM-DD' — an hourly cell's tooltip text."""
+    return f'{count} image{"s" if count != 1 else ""} at {hour:02d}:00 on {day.isoformat()}'
+
+
+def _day_detail_html(key, day, hour_cells):
+    """Render one day's hidden hourly drill-down (24 cells), toggled visible
+    by the matching full-history cell's onclick — see ``_full_grid_html``.
+    """
+    detail_id = f"day-detail-{key}-{day.isoformat()}"
+    cells = "".join(
+        f'<div class="hour-cell l{c["level"]}" '
+        f'title="{html.escape(_hour_title(c["count"], c["hour"], day))}"></div>'
+        for c in hour_cells
+    )
+    return (
+        f'<div class="day-detail" id="{detail_id}" style="display:none">'
+        f'<div class="day-detail-title">{html.escape(day.isoformat())} &middot; hourly</div>'
+        f'<div class="day-hour-grid">{cells}</div>'
+        '<div class="day-hour-labels"><span>12a</span><span>6a</span>'
+        "<span>12p</span><span>6p</span></div></div>"
+    )
+
+
+def _full_grid_html(cam):
     """Render the 13-week x 7-day cells in column-major order (matches
     ``grid-auto-flow: column``): one week's 7 days, then the next week's.
 
     Each cell's ``title`` shows on hover; since touch screens have no way to
     trigger a hover, an ``onclick`` also copies that same text into the
-    modal's ``.modal-hint`` line so a tap reveals it the same way.
+    modal's ``.modal-hint`` line so a tap reveals it the same way. For a day
+    with frames (an entry in ``cam["day_details"]``), the same click also
+    reveals that day's hidden hourly sub-grid (see ``_day_detail_html``),
+    hiding whichever day was previously shown.
     """
+    key = cam["key"]
+    day_details = cam.get("day_details", {})
     cells = []
-    for week in grid:
+    for week in cam["full_grid"]:
         for cell in week:
             if cell["future"]:
                 cells.append('<div class="full-cell future"></div>')
-            else:
-                title = html.escape(_day_title(cell["count"], cell["date"]))
-                cells.append(
-                    f'<div class="full-cell l{cell["level"]}" title="{title}" '
-                    "onclick=\"this.closest('.modal-sheet').querySelector('.modal-hint')"
-                    '.textContent=this.title"></div>'
-                )
+                continue
+            day = cell["date"]
+            title = html.escape(_day_title(cell["count"], day))
+            onclick = (
+                "this.closest('.modal-sheet').querySelector('.modal-hint').textContent=this.title;"
+                "this.closest('.modal-sheet').querySelectorAll('.day-detail')"
+                ".forEach(function(d){d.style.display='none'})"
+            )
+            if day in day_details:
+                detail_id = f"day-detail-{key}-{day.isoformat()}"
+                onclick += f";document.getElementById('{detail_id}').style.display='block'"
+            cells.append(
+                f'<div class="full-cell l{cell["level"]}" title="{title}" '
+                f'onclick="{onclick}"></div>'
+            )
     return '<div class="full-grid">' + "".join(cells) + "</div>"
 
 
@@ -700,6 +808,10 @@ def _cam_card_html(cam, now):
 
 def _history_modal_html(cam):
     key = cam["key"]
+    day_details = "".join(
+        _day_detail_html(key, day, cells)
+        for day, cells in sorted(cam.get("day_details", {}).items())
+    )
     return (
         f'<div class="modal-overlay" id="history-{key}">'
         f'<a class="modal-scrim" href="#!" aria-label="Close"></a>'
@@ -709,40 +821,41 @@ def _history_modal_html(cam):
         '<a class="modal-close" href="#!" aria-label="Close">&times;</a>'
         "</div>"
         f'{_month_row_html(cam["full_grid"])}'
-        f'<div class="day-row">{_day_labels_html()}{_full_grid_html(cam["full_grid"])}</div>'
+        f'<div class="day-row">{_day_labels_html()}{_full_grid_html(cam)}</div>'
         '<div class="modal-hint">Tap a day for details</div>'
+        f"{day_details}"
         "</div></div>"
     )
 
 
 def _footer_html(system):
-    """Render the footer: host stats (uptime, memory, load average) on one
-    line, then a deployment marker (commit sha8 and date) on a second.
+    """Render the footer: one host stat per line (uptime, memory, load
+    average, page generation time), then a deployment marker (commit sha8
+    and date) on its own line after.
 
     Each stat/marker is included only if its underlying read succeeded (see
     ``system_stats`` / ``read_git_info``), so the footer degrades gracefully
     rather than showing a fabricated value — e.g. on a dev machine with no
     /proc/meminfo, or a non-git deployment.
     """
-    bits = []
+    lines = []
     if system.get("uptime_seconds") is not None:
-        bits.append(f'Uptime {html.escape(_human_uptime(system["uptime_seconds"]))}')
+        lines.append(f'Uptime {html.escape(_human_uptime(system["uptime_seconds"]))}')
     memory = system.get("memory")
     if memory:
         used_kb = memory["total_kb"] - memory["available_kb"]
         pct = used_kb / memory["total_kb"] * 100 if memory["total_kb"] else 0
-        bits.append(
+        lines.append(
             f"Mem {html.escape(_human_bytes(used_kb * 1024))} / "
             f'{html.escape(_human_bytes(memory["total_kb"] * 1024))} ({pct:.0f}%)'
         )
     load_avg = system.get("load_avg")
     if load_avg:
         l1, l5, l15 = load_avg
-        bits.append(f"Load {l1:.2f}, {l5:.2f}, {l15:.2f}")
+        lines.append(f"Load {l1:.2f}, {l5:.2f}, {l15:.2f}")
+    if system.get("generate_seconds") is not None:
+        lines.append(f'Generated in {html.escape(_human_duration(system["generate_seconds"]))}')
 
-    lines = []
-    if bits:
-        lines.append(" &middot; ".join(bits))
     git = system.get("git")
     if git:
         lines.append(
@@ -858,6 +971,7 @@ def main():
     show_stale_banner = config.get("web_show_stale_banner", False)
 
     now = datetime.now(PACIFIC)
+    generate_start = time.perf_counter()
     page_data = build_page_data(
         archive_dir,
         log_path,
@@ -867,6 +981,9 @@ def main():
     )
     system = system_stats()
     system["git"] = read_git_info()
+    # Covers the archive scan, capture log, /proc reads, and git subprocess —
+    # the I/O-bound work — not render_html's pure-string HTML assembly below.
+    system["generate_seconds"] = time.perf_counter() - generate_start
     html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner, system=system)
 
     output.parent.mkdir(parents=True, exist_ok=True)

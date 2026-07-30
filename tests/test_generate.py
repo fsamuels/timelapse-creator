@@ -539,7 +539,115 @@ def test_render_html_full_history_day_tap_copies_tooltip_into_the_modal_hint(tmp
 
     assert '<div class="modal-hint">Tap a day for details</div>' in doc
     assert "onclick=\"this.closest('.modal-sheet').querySelector('.modal-hint')" in doc
-    assert '.textContent=this.title"' in doc
+    assert ".textContent=this.title;" in doc
+
+
+def test_render_html_full_history_day_tap_resets_any_shown_day_detail(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert (
+        "this.closest('.modal-sheet').querySelectorAll('.day-detail')"
+        ".forEach(function(d){d.style.display='none'})"
+    ) in doc
+
+
+def test_render_html_day_with_frames_reveals_its_hourly_detail(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-15-00-000000-0800")
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T09-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    key = data["sites"][0]["cams"][0]["key"]
+    detail_id = f"day-detail-{key}-2026-07-16"
+    assert f'id="{detail_id}" style="display:none"' in doc
+    assert f"document.getElementById('{detail_id}').style.display='block'" in doc
+    assert "2026-07-16 &middot; hourly" in doc
+    assert 'title="2 images at 12:00 on 2026-07-16"' in doc
+    assert 'title="1 image at 09:00 on 2026-07-16"' in doc
+
+
+def test_render_html_empty_day_has_no_detail_block(tmp_path):
+    # A day within the visible history window with zero frames shouldn't get
+    # a pre-rendered (and pointless) empty hourly sub-grid.
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    key = data["sites"][0]["cams"][0]["key"]
+    assert f"day-detail-{key}-2026-07-15" not in doc
+
+
+def test_hourly_counts_buckets_by_date_and_hour(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-15-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T09-00-00-000000-0800"),
+    ]
+
+    counts = generate.hourly_counts(frames)
+
+    assert counts == {date(2026, 7, 16): {12: 2, 9: 1}}
+
+
+def test_hour_cells_for_day_is_24_cells_leveled_to_the_days_own_peak():
+    cells = generate.hour_cells_for_day({9: 1, 12: 4})
+
+    assert len(cells) == 24
+    assert cells[9]["level"] == 1
+    assert cells[12]["level"] == 2
+    assert cells[0]["count"] == 0
+    assert cells[0]["level"] == 0
+
+
+def test_day_details_for_grid_skips_days_without_frames():
+    end = date(2026, 7, 16)
+    grid = generate.heatmap_grid({end: 1}, end, weeks=2)
+    hourly = {end: {12: 1}}
+
+    details = generate.day_details_for_grid(hourly, grid)
+
+    assert set(details) == {end}
+    assert len(details[end]) == 24
+
+
+def test_day_details_for_grid_skips_future_cells():
+    end = date(2026, 7, 15)  # a Wednesday; later weekdays in the final week are "future"
+    grid = generate.heatmap_grid({}, end, weeks=1)
+    future_day = next(c["date"] for week in grid for c in week if c["future"])
+    hourly = {future_day: {12: 1}}  # shouldn't happen in practice, but guard anyway
+
+    details = generate.day_details_for_grid(hourly, grid)
+
+    assert future_day not in details
+
+
+def test_human_duration_under_a_second_is_milliseconds():
+    assert generate._human_duration(0.428) == "428ms"
+
+
+def test_human_duration_a_second_or_more_is_seconds():
+    assert generate._human_duration(1.8) == "1.8s"
+
+
+def test_render_html_footer_shows_generation_time(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {"generate_seconds": 0.35}
+    doc = generate.render_html(data, now, system=system)
+
+    assert '<div class="footer">' in doc
+    assert "Generated in 350ms" in doc
 
 
 def test_render_html_recent_strip_tooltip_leads_with_the_image_count(tmp_path):
@@ -808,6 +916,30 @@ def test_render_html_footer_shows_uptime_memory_and_load(tmp_path):
     assert "Uptime 3d 4h" in doc
     assert "Mem" in doc and "(60%)" in doc
     assert "Load 0.15, 0.09, 0.05" in doc
+
+
+def test_render_html_footer_puts_each_stat_on_its_own_line(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {
+        "uptime_seconds": 3 * 86400 + 4 * 3600,
+        "memory": {"total_kb": 1000000, "available_kb": 400000},
+        "load_avg": (0.15, 0.09, 0.05),
+        "generate_seconds": 0.35,
+        "git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"},
+    }
+    doc = generate.render_html(data, now, system=system)
+
+    footer = doc.split('<div class="footer">')[1].split("</div>")[0]
+    assert footer.split("<br>") == [
+        "Uptime 3d 4h",
+        "Mem 585.9 MB / 976.6 MB (60%)",
+        "Load 0.15, 0.09, 0.05",
+        "Generated in 350ms",
+        "Deployed a1b2c3d4 &middot; 2026-07-29",
+    ]
 
 
 def test_render_html_footer_omitted_without_system_stats(tmp_path):
