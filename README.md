@@ -4,11 +4,11 @@ Tools for building timelapse videos from the [Ski Bluewood webcams](https://blue
 (Dayton, WA) — and eventually any public webcam.
 
 **Status: capture pipeline is live on the Pi.** A Raspberry Pi Zero W (hostname
-`timelapse-pi`) is deployed and capturing four cams (the two Bluewood cams and two Seattle
-dev cams) on a systemd timer, with a home-network status page live at
-`http://timelapse-pi.local:8080/`. The two North Carolina cams are configured but
-commented out in `capture/config.pi.yaml` as of 2026-07-25, pending the SD card migration
-(`docs/sd-card-migration.md`) — re-enable them once the Pi is on the 64GB card. GitHub
+`timelapse-pi`) is deployed and capturing seven cams (the two Bluewood cams, four Seattle
+cams, and the UNCA tower cam) on a systemd timer, with a home-network status page live at
+`http://timelapse-pi.local:8080/`. The Nantahala Outdoor Center cam is still configured but
+commented out in `capture/config.pi.yaml`; the UNCA tower cam was re-enabled 2026-07-30 now
+that the Pi is on the 64GB card (`docs/sd-card-migration.md`). GitHub
 Actions no longer captures on a schedule —
 the earlier Bluewood-only cron job has been retired now that the Pi hand-off trial is
 complete (see `docs/open-questions.md` #1); `workflow_dispatch` remains as a manual
@@ -37,18 +37,21 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 | --- | --- |
 | [docs/design.md](docs/design.md) | Architecture: the capture job, the video builder, drone-photo normalization (alignment methods, manual anchors), video build-time QA labels/color correction, storage layout, and outage/stale-frame handling |
 | [docs/open-questions.md](docs/open-questions.md) | Decisions made so far and what's still open (output format, gap handling in video, long-term storage), with options and recommendations |
-| [docs/sd-card-migration.md](docs/sd-card-migration.md) | Runbook for migrating the Pi's SD card from 4GB to 64GB (documented, not yet executed) |
+| [docs/sd-card-migration.md](docs/sd-card-migration.md) | Runbook for migrating the Pi's SD card from 4GB to 64GB (executed 2026-07-30) |
 
 ## What's implemented
 
 - `capture/config.yaml` — the two Bluewood cams, as direct CameraFTP JPEG URLs (used by the
   `workflow_dispatch` manual emergency-capture fallback in GitHub Actions; not on a schedule
   anymore)
-- `capture/config.pi.yaml` — the Pi's config: two Seattle KING 5 cams, added to keep
-  developing the pipeline while Bluewood was off-grid, and the two Bluewood cams (added for
-  the now-completed Pi hand-off trial), plus a `capture_log` path. Two North Carolina cams — WLOS-hosted PNG
-  snapshots of the UNCA tower and the Nantahala Outdoor Center, Pi-only — are defined but
-  commented out pending the SD card migration (`docs/sd-card-migration.md`)
+- `capture/config.pi.yaml` — the Pi's config: four Seattle cams (the original two KING 5 dev
+  cams, added to keep developing the pipeline while Bluewood was off-grid, plus Mount
+  Rainier and SeaTac, added 2026-07-30) and the two Bluewood cams (added for the
+  now-completed Pi hand-off trial), plus a `capture_log` path. Two North Carolina cams —
+  WLOS-hosted PNG snapshots of the UNCA tower and the Nantahala Outdoor Center, Pi-only —
+  were added on top of that; the UNCA tower cam was re-enabled 2026-07-30 now that the Pi is
+  on the 64GB card (`docs/sd-card-migration.md`), while the Nantahala Outdoor Center cam
+  stays commented out
 - `capture/fetch.py` — fetches an image (or grabs a frame from a stream via ffmpeg, unused so far — both cams are plain images)
 - `capture/archive.py` — SHA-256 stale/duplicate detection, timestamped file writes
 - `capture/main.py` — entrypoint: takes an optional `--config` (defaults to `capture/config.yaml`,
@@ -69,8 +72,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback
 - `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up
-  doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all four cams and
-  serving the status page
+  doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all seven active cams
+  and serving the status page
 - `normalize/` — aligns a directory of not-quite-fixed-position photos (e.g. drone shots) onto
   a common frame so they cut into a smooth timelapse; a separate, on-demand batch input path
   from the scheduled webcam capture above. Photos are processed in EXIF capture-time order,
@@ -173,7 +176,7 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   filtered at capture time.
 - **Outages:** failed fetches are logged and skipped; *stale* frames (cam down but still
   serving its last cached image) are detected by content hash and discarded.
-- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) captures all six cams via a
+- **Capture platform:** a Raspberry Pi Zero W (`timelapse-pi`) captures all seven active cams via a
   systemd timer — the sole scheduled capture platform now that the hand-off trial is
   complete (see `docs/open-questions.md` #1). GitHub Actions' schedule is disabled;
   `workflow_dispatch` remains as a manual emergency-capture fallback.
