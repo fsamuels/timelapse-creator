@@ -4,9 +4,10 @@
 # Cams: the two Seattle (KING 5) cams were added first to keep developing the
 # pipeline while the off-grid Bluewood cams were down (off-season / generator
 # not running). The two Bluewood cams (summit, base) are now captured here too
-# — this is the Pi hand-off trial: GitHub Actions (capture/config.yaml) keeps
-# capturing Bluewood in parallel for ~1-2 weeks so the two sources can be
-# compared before the Actions schedule is disabled — see docs/open-questions.md #1.
+# — added for the Pi hand-off trial, where GitHub Actions (capture/config.yaml)
+# captured Bluewood in parallel for ~1-2 weeks so the two sources could be
+# compared before the Actions schedule was disabled — see docs/open-questions.md #1.
+# That trial is complete; config.yaml now only runs via a manual workflow_dispatch.
 # Two North Carolina cams (WLOS-hosted PNG snapshots) were added on top of that
 # — Pi-only, no GitHub Actions equivalent. They ran hourly (interval_minutes)
 # rather than every 15 min to slow disk growth; capture/main.py enforces the

@@ -31,21 +31,71 @@ reinstall than to clone.
   another machine (this doesn't have to be the Pi itself; the Pi Zero W has only one card
   slot, so the new card is prepared separately and swapped in at the end).
 - [Raspberry Pi Imager](https://www.raspberrypi.com/software/) on that other machine.
-- Network access to the Pi (`ssh` to `timelapse-pi.local`) for the `rsync` step, or a way to
-  move the backup file some other way (external drive) if the Pi isn't reachable.
+- Network access to the Pi (`ssh` to `timelapse-pi.local`) for the `rsync` steps below.
+- If your workstation's local username differs from the Pi's account (e.g. a Mac's default
+  shortname vs. the Pi login), either prefix every remote path below with `<pi-username>@`,
+  or add this once to `~/.ssh/config` so it's automatic from then on:
+  ```
+  Host timelapse-pi.local
+      User <pi-username>
+  ```
 
 ### Steps
 
-1. **Back up first, regardless of what follows.** From another machine on the same network:
+1. **Copy the archive off the old card before touching anything else.** Prefer `rsync` over
+   a `tar` snapshot — it verifies transferred bytes, only re-sends what's changed on a second
+   pass, and (with `-a`) preserves timestamps/permissions, though none of that is actually
+   load-bearing here: `capture/archive.py` encodes each frame's real capture time in its
+   filename, not its mtime, so even a mangled-timestamp copy wouldn't break anything
+   downstream. The exact mechanics depend on what hardware is available:
 
-   ```
-   ssh timelapse-pi.local 'sudo tar -czf - -C /var/lib/timelapse archive capture.log' \
-     > timelapse-backup-$(date +%Y%m%d).tar.gz
-   ```
+   - **Spare Pi, or a Linux workstation that can mount the card's ext4 partition:** rsync
+     directly, old card → new card, over the network — no intermediate copy needed:
+     ```
+     rsync -avz --progress <pi-username>@timelapse-pi.local:/var/lib/timelapse/archive/ /var/lib/timelapse/archive/
+     rsync -avz --progress <pi-username>@timelapse-pi.local:/var/lib/timelapse/capture.log /var/lib/timelapse/
+     ```
+     Run this from wherever the new card is reachable — booted in the spare Pi, or mounted
+     via a USB reader on the Linux machine.
 
-   Keep this until the migration is verified end-to-end (step 7). This is the safety net —
-   everything below should be reversible by just continuing to use the old card if something
-   goes wrong.
+   - **Neither available (the common case — most workstations are macOS/Windows, and a
+     dedicated capture Pi typically has no spare sibling to borrow):** relay through the
+     workstation instead. This isn't just the easier option, it's close to the only one: the
+     new card's root filesystem is **ext4**, which macOS/Windows can't read or write natively
+     without third-party drivers, and the Pi Zero W's single card slot means the old and new
+     cards can never be network-reachable at the same time anyway — direct card-to-card
+     rsync simply isn't on the table without a second Pi. Two hops instead:
+
+     ```
+     # Leg 1 — old Pi → workstation, while the old card is still running normally
+     mkdir -p ~/timelapse-backup
+     rsync -avz --progress <pi-username>@timelapse-pi.local:/var/lib/timelapse/archive/ ~/timelapse-backup/archive/
+     rsync -avz --progress <pi-username>@timelapse-pi.local:/var/lib/timelapse/capture.log ~/timelapse-backup/
+     ```
+
+     Then flash and bring up the new card (steps 2–4 below). Once it answers on the network:
+
+     ```
+     # Leg 2 — workstation → new Pi (this is also step 5, "restore the archive", below)
+     rsync -avz --progress ~/timelapse-backup/archive/ <pi-username>@timelapse-pi.local:/var/lib/timelapse/archive/
+     rsync -avz --progress ~/timelapse-backup/capture.log <pi-username>@timelapse-pi.local:/var/lib/timelapse/
+     ```
+
+     Note the trailing slash on `archive/` on *both* sides of *both* legs — that's what makes
+     rsync sync directory contents into the destination directory, rather than nesting an
+     extra `archive/archive/` level.
+
+     A gap in captured frames while the old card is offline for this is expected and fine —
+     the project already treats "cam down" as ordinary operation (see `docs/design.md`'s
+     outage handling), and a card swap is just another outage. For the tightest possible gap,
+     run leg 1 twice: once early (moves the bulk of the data with zero downtime), and again
+     right after stopping the timer in step 3 below (catches just the last few minutes of
+     frames before the physical swap) — but a single pass is fine if a small gap doesn't
+     matter to you.
+
+   Keep this copy (`~/timelapse-backup/`, and/or the old card itself) until the migration is
+   verified end-to-end (step 6). This is the safety net — everything below should be
+   reversible by just continuing to use the old card if something goes wrong.
 
 2. **Flash the new 64GB card** with Raspberry Pi Imager, same OS choice as the original
    bring-up (Raspberry Pi OS Lite, headless — use Imager's advanced options (⚙) to preload
@@ -71,14 +121,9 @@ reinstall than to clone.
    needs to be restored first, or the very first tick's stale-frame detection has nothing to
    compare against (harmless, just means one extra frame gets archived unnecessarily).
 
-5. **Restore the archive** from the backup made in step 1:
-
-   ```
-   tar -xzf timelapse-backup-YYYYMMDD.tar.gz -C /var/lib/timelapse
-   ```
-
-   (Copy the backup file to the new card first — `scp` from the backup machine, or via USB
-   drive if the two Pis/cards aren't on the network at the same time.)
+5. **Restore the archive.** If step 1 used the direct card-to-card method, this is already
+   done. If it used the workstation-relay method, this is leg 2 from step 1 above — run it
+   now that the new card is reachable on the network.
 
 6. **Verify the restore** before going live:
 

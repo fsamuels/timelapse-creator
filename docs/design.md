@@ -24,9 +24,10 @@
   (default: `capture/config.yaml`, unchanged), and a second config,
   `capture/config.pi.yaml`, which the Pi runs. It started with two Seattle (KING 5) cams —
   added to keep developing the pipeline while Bluewood was dark — and now also includes the
-  two Bluewood cams (`summit`, `base`), so the Pi captures all four. GitHub Actions keeps
-  capturing Bluewood in parallel via `config.yaml` during the hand-off trial
-  (`docs/open-questions.md` #1).
+  two Bluewood cams (`summit`, `base`), so the Pi captures all four. GitHub Actions captured
+  Bluewood in parallel via `config.yaml` during the hand-off trial (`docs/open-questions.md`
+  #1); that trial is complete, and `config.yaml` now only runs via the manual
+  `workflow_dispatch` emergency fallback.
 - **North Carolina cams added (Pi-only).** Two WLOS-hosted PNG snapshot cams — the UNCA
   tower cam and the Nantahala Outdoor Center cam — were added to `capture/config.pi.yaml`
   under a new `north-carolina` site, bringing the Pi to six cams total. No config.yaml /
@@ -151,11 +152,11 @@ archive/
 **Deployed and running** (see `docs/open-questions.md` #1): a systemd timer runs the same
 `capture/` code every 15 minutes on the Pi (hostname `timelapse-pi`), writing to local disk
 at `/var/lib/timelapse/archive` instead of committing to git (see storage below), and
-capturing all six cams. GitHub Actions keeps running in parallel for a ~1-2 week trial to
-confirm the Pi is reliable, then its schedule is disabled (manual `workflow_dispatch` stays
-available as an emergency fallback). Still to do before the trial ends: migrate the existing
-git-committed frames onto the Pi's storage so the archive has one home going forward, and
-stop tracking `archive/` in git.
+capturing all six cams. GitHub Actions ran in parallel for a ~1-2 week trial to confirm the
+Pi was reliable; that trial is complete, its schedule trigger is disabled, and manual
+`workflow_dispatch` stays available as an emergency fallback. The existing git-committed
+frames were migrated onto the Pi's storage so the archive has one home, and `archive/` is no
+longer tracked in git.
 
 The systemd units live under `deploy/pi/` (`timelapse-capture.service`,
 `timelapse-capture.timer`, `timelapse-web.service`) with a bring-up doc

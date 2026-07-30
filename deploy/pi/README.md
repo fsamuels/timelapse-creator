@@ -1,12 +1,14 @@
 # Pi bring-up
 
-Runs the capture job on a Raspberry Pi via systemd instead of GitHub Actions. **This is
-deployed and running** on the Pi (hostname `timelapse-pi`), capturing **all six cams** (the
-two Bluewood cams, the two Seattle KING 5 dev cams, and two Pi-only North Carolina cams —
-UNCA tower and Nantahala Outdoor Center) from `capture/config.pi.yaml`. GitHub Actions
-(`.github/workflows/capture.yml`) still captures Bluewood in parallel during the hand-off
-trial (see `docs/open-questions.md` #1); the two capture paths run independently and nothing
-here disables the Actions schedule. The steps below document a from-scratch bring-up.
+Runs the capture job on a Raspberry Pi via systemd — the sole scheduled capture platform for
+this project. **This is deployed and running** on the Pi (hostname `timelapse-pi`), capturing
+**all six cams** (the two Bluewood cams, the two Seattle KING 5 dev cams, and two Pi-only
+North Carolina cams — UNCA tower and Nantahala Outdoor Center) from `capture/config.pi.yaml`.
+GitHub Actions previously ran this same capture job on a schedule too, in parallel, for a
+~1-2 week hand-off trial (see `docs/open-questions.md` #1). That trial is complete: the
+schedule trigger is disabled, and `.github/workflows/capture.yml` now exists only as a manual
+(`workflow_dispatch`) emergency-capture fallback with nothing to commit day-to-day. The steps
+below document a from-scratch bring-up.
 
 **Running low on SD card space?** See `docs/sd-card-migration.md` for the documented
 4GB → 64GB migration process (`docs/open-questions.md` #11) — not yet executed, but written
@@ -14,14 +16,21 @@ up for when the archive needs it.
 
 ## Steps
 
-1. Clone the repo to `/opt/timelapse-creator` (adjust if you use a different path — see
-   the placeholder-paths note below), then hand ownership to your user so a manual
-   `deploy/pi/update.sh` run doesn't need `sudo` for `git pull`:
+1. Install system dependencies, then clone the repo to `/opt/timelapse-creator` (adjust if
+   you use a different path — see the placeholder-paths note below), and hand ownership to
+   your user so a manual `deploy/pi/update.sh` run doesn't need `sudo` for `git pull`:
 
    ```
+   sudo apt update
+   sudo apt install -y git python3-venv python3-pip build-essential python3-dev libyaml-dev
    sudo git clone https://github.com/<owner>/timelapse-creator.git /opt/timelapse-creator
    sudo chown -R $USER:$USER /opt/timelapse-creator
    ```
+
+   Raspberry Pi OS Lite doesn't ship `git` by default, and `python3 -m venv` needs
+   `python3-venv` installed separately on Debian-based systems — both are needed before step
+   2 below. `build-essential`/`python3-dev`/`libyaml-dev` cover step 2's armv6 wheel-build
+   caveat up front.
 
    `timelapse-update.service` (step 4) instead runs `update.sh` as root, so root also
    needs permission to `git pull` here despite the repo being owned by `$USER` — otherwise
@@ -47,9 +56,9 @@ up for when the archive needs it.
    **armv6 wheel caveat (Pi Zero W):** the original Pi Zero W is armv6, which doesn't
    always have prebuilt wheels on PyPI for every package version. `requests` and
    `PyYAML` are both small pure-Python-ish packages that build fine from source if pip
-   falls back to a source build — expect it to take a little longer, not to fail. If it
-   does fail, install build essentials first (`sudo apt install build-essential
-   python3-dev libyaml-dev`).
+   falls back to a source build — expect it to take a little longer, not to fail. Step 1's
+   `build-essential`/`python3-dev`/`libyaml-dev` install already covers what a source build
+   needs, so this shouldn't require any extra intervention.
 
 3. Create the local-disk storage directory used by `capture/config.pi.yaml`
    (`archive_dir`, `capture_log`, and the status page's `web_output`):
@@ -135,8 +144,75 @@ To generate the page by hand (e.g. to check it before enabling the timer):
 
 **No auth:** the page — and, via the `archive/` symlink, the entire raw frame archive —
 trusts the home network and is served on all interfaces. Don't port-forward it or
-otherwise expose port 8080 publicly (see `docs/open-questions.md` #8); Tailscale is the
-documented path for remote access.
+otherwise expose port 8080 publicly (see `docs/open-questions.md` #8) — use the Tailscale
+setup below for remote access instead.
+
+## Samba share (browsing the archive from other machines)
+
+Optional, but useful once you want to run `video/main.py` (or `daily_clip.py`/
+`season_video.py`) against a cam directory from your own computer instead of on the Pi
+itself — a read-only export of the raw frame archive over the local network, so there's no
+copying frames around by hand first.
+
+```
+sudo apt install samba
+```
+
+Append a share definition to `/etc/samba/smb.conf`:
+
+```
+[timelapse]
+   path = /var/lib/timelapse/archive
+   read only = yes
+   guest ok = yes
+   force user = <pi-username>
+```
+
+(`<pi-username>` is the account created in step 1 above — `force user` makes guest
+connections read with that account's permissions, since there's no real login to derive
+them from otherwise.) Then:
+
+```
+sudo systemctl restart smbd
+```
+
+Mount it from another machine:
+- **macOS:** Finder → Go → Connect to Server → `smb://timelapse-pi.local/timelapse`
+- **Windows:** File Explorer address bar → `\\timelapse-pi.local\timelapse`
+- **Linux:** `smbclient //timelapse-pi.local/timelapse` or a `cifs-utils` mount
+
+**Trust model:** `guest ok = yes` matches the same "home network only, no auth" posture the
+status page and its `/archive/` symlink already use (see `docs/open-questions.md` #8) —
+anyone on the LAN can read every frame, nobody can write any. If that's ever not the right
+call, switch to a real Samba account instead: `sudo smbpasswd -a <pi-username>`, then set
+`guest ok = no` in the share definition above.
+
+## Remote access (Tailscale)
+
+Covers SSH, the status page, and the Samba share above from outside the home network, with
+no port-forwarding:
+
+```
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+This prints a login URL — open it in a browser, sign in (or create a free personal Tailscale
+account), and approve the Pi joining your tailnet. The Pi then gets a stable `100.x.x.x`
+address and a MagicDNS name (typically `timelapse-pi.<your-tailnet>.ts.net`), reachable from
+any other device signed into the same tailnet. Install Tailscale on whichever other
+device(s) you want to reach the Pi from too (same one-liner on Linux/Mac, the Tailscale app
+on iOS/Android/Windows) — `ssh`, the status page, and the Samba share above then all just
+work over the tailnet exactly as they do on the home network, no extra configuration per
+service.
+
+**Do this after switching to key-only SSH auth, not before** — once the Pi is reachable from
+anywhere, password auth is a meaningfully bigger attack surface than "reachable only from
+inside the home network."
+
+Tailscale runs over its own virtual interface (`tailscale0`) rather than opening anything on
+your home router — nothing here needs router config, which is the main appeal over plain
+port-forwarding.
 
 ## Status
 
