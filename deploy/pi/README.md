@@ -115,8 +115,75 @@ To generate the page by hand (e.g. to check it before enabling the timer):
 
 **No auth:** the page — and, via the `archive/` symlink, the entire raw frame archive —
 trusts the home network and is served on all interfaces. Don't port-forward it or
-otherwise expose port 8080 publicly (see `docs/open-questions.md` #8); Tailscale is the
-documented path for remote access.
+otherwise expose port 8080 publicly (see `docs/open-questions.md` #8) — use the Tailscale
+setup below for remote access instead.
+
+## Samba share (browsing the archive from other machines)
+
+Optional, but useful once you want to run `video/main.py` (or `daily_clip.py`/
+`season_video.py`) against a cam directory from your own computer instead of on the Pi
+itself — a read-only export of the raw frame archive over the local network, so there's no
+copying frames around by hand first.
+
+```
+sudo apt install samba
+```
+
+Append a share definition to `/etc/samba/smb.conf`:
+
+```
+[timelapse]
+   path = /var/lib/timelapse/archive
+   read only = yes
+   guest ok = yes
+   force user = <pi-username>
+```
+
+(`<pi-username>` is the account created in step 1 above — `force user` makes guest
+connections read with that account's permissions, since there's no real login to derive
+them from otherwise.) Then:
+
+```
+sudo systemctl restart smbd
+```
+
+Mount it from another machine:
+- **macOS:** Finder → Go → Connect to Server → `smb://timelapse-pi.local/timelapse`
+- **Windows:** File Explorer address bar → `\\timelapse-pi.local\timelapse`
+- **Linux:** `smbclient //timelapse-pi.local/timelapse` or a `cifs-utils` mount
+
+**Trust model:** `guest ok = yes` matches the same "home network only, no auth" posture the
+status page and its `/archive/` symlink already use (see `docs/open-questions.md` #8) —
+anyone on the LAN can read every frame, nobody can write any. If that's ever not the right
+call, switch to a real Samba account instead: `sudo smbpasswd -a <pi-username>`, then set
+`guest ok = no` in the share definition above.
+
+## Remote access (Tailscale)
+
+Covers SSH, the status page, and the Samba share above from outside the home network, with
+no port-forwarding:
+
+```
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+This prints a login URL — open it in a browser, sign in (or create a free personal Tailscale
+account), and approve the Pi joining your tailnet. The Pi then gets a stable `100.x.x.x`
+address and a MagicDNS name (typically `timelapse-pi.<your-tailnet>.ts.net`), reachable from
+any other device signed into the same tailnet. Install Tailscale on whichever other
+device(s) you want to reach the Pi from too (same one-liner on Linux/Mac, the Tailscale app
+on iOS/Android/Windows) — `ssh`, the status page, and the Samba share above then all just
+work over the tailnet exactly as they do on the home network, no extra configuration per
+service.
+
+**Do this after switching to key-only SSH auth, not before** — once the Pi is reachable from
+anywhere, password auth is a meaningfully bigger attack surface than "reachable only from
+inside the home network."
+
+Tailscale runs over its own virtual interface (`tailscale0`) rather than opening anything on
+your home router — nothing here needs router config, which is the main appeal over plain
+port-forwarding.
 
 ## Status
 
