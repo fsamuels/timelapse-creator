@@ -122,6 +122,13 @@ reinstall than to clone.
    needs to be restored first, or the very first tick's stale-frame detection has nothing to
    compare against (harmless, just means one extra frame gets archived unnecessarily).
 
+   **Don't skip the one-time git grant nested in that step 1:** `sudo git config --system
+   --add safe.directory /opt/timelapse-creator`. It's easy to miss since it's folded into the
+   broader "clone + chown" instructions rather than called out on its own, but without it
+   `timelapse-update.timer` fails its very first tick once enabled in step 7 below — see the
+   troubleshooting note at the end of this doc, which is exactly what happened during the
+   2026-07-30 migration.
+
 5. **Restore the archive.** If step 1 used the direct card-to-card method, this is already
    done. If it used the workstation-relay method, this is leg 2 from step 1 above — run it
    now that the new card is reachable on the network.
@@ -135,12 +142,15 @@ reinstall than to clone.
    Compare against the same command run against the backup (or the old card, if still
    reachable) — counts should match exactly.
 
-7. **Go live:** enable the timer and web service, then confirm one capture tick behaves as
-   expected:
+7. **Go live:** enable the capture timer, web service, *and the auto-update timer* — it's
+   easy to enable only the first two since they're the ones you'll notice missing right away,
+   but skipping `timelapse-update.timer` means the next merge to `main` silently won't reach
+   this card:
 
    ```
    sudo systemctl enable --now timelapse-capture.timer
    sudo systemctl enable --now timelapse-web.service
+   sudo systemctl enable --now timelapse-update.timer
    journalctl -u timelapse-capture.service -f
    ```
 
@@ -148,12 +158,52 @@ reinstall than to clone.
    and per-cam disk usage, and that the next 15-minute tick appends a new frame per cam
    rather than re-archiving something already present.
 
+   Then verify the update timer specifically, rather than waiting up to 10 minutes to find
+   out whether it works — trigger a run immediately:
+
+   ```
+   sudo systemctl start timelapse-update.service
+   journalctl -u timelapse-update.service -f
+   ```
+
+   Expect `Already up to date (...); nothing to do` (nothing's merged since the card swap).
+   If instead you see `fatal: detected dubious ownership`, see the troubleshooting note below.
+
 8. **Confirm the filesystem actually grew** to 64GB (`df -h /`), since a fresh Raspberry Pi
    OS image should auto-expand on first boot but it's worth a direct check rather than an
    assumption.
 
 9. **Keep the old 4GB card** as a cold backup for a couple of weeks before wiping and
    reusing it, in case anything surfaces that the verification in steps 6–7 missed.
+
+## Troubleshooting: "dubious ownership" on the first auto-update tick
+
+If `timelapse-update.timer`'s first run fails, `journalctl -u timelapse-update.service`
+will show something like:
+
+```
+fatal: detected dubious ownership in repository at '/opt/timelapse-creator'
+To add an exception for this directory, call:
+        git config --global --add safe.directory /opt/timelapse-creator
+```
+
+This means the one-time grant from bring-up step 1 was skipped on the fresh install — this
+is exactly what happened during the 2026-07-30 migration, caught only because the new
+card's first scheduled auto-update tick failed. Fix it on the Pi:
+
+```
+sudo git config --system --add safe.directory /opt/timelapse-creator
+```
+
+Use `--system`, not the `--global` git itself suggests — `--global` only covers whichever
+user runs that command, but `timelapse-update.service` runs as root, so `--system` (which
+applies machine-wide, in `/etc/gitconfig`) is what actually satisfies the check for it. Then
+re-trigger and confirm it's clean:
+
+```
+sudo systemctl start timelapse-update.service
+journalctl -u timelapse-update.service -f
+```
 
 ## Alternative: full-disk clone
 
