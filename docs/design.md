@@ -168,9 +168,10 @@ archive/
 ### Handing capture off to the Pi
 
 **Deployed and running** (see `docs/open-questions.md` #1): a systemd timer runs the same
-`capture/` code every 15 minutes on the Pi (hostname `timelapse-pi`), writing to local disk
-at `/var/lib/timelapse/archive` instead of committing to git (see storage below), and
-capturing all six cams. GitHub Actions ran in parallel for a ~1-2 week trial to confirm the
+`capture/` code on the Pi (hostname `timelapse-pi`), writing to local disk at
+`/var/lib/timelapse/archive` instead of committing to git (see storage below), and capturing
+all eight active cams (most every 15 minutes, unca-tower hourly). GitHub Actions ran in
+parallel for a ~1-2 week trial to confirm the
 Pi was reliable; that trial is complete, its schedule trigger is disabled, and manual
 `workflow_dispatch` stays available as an emergency fallback. The existing git-committed
 frames were migrated onto the Pi's storage so the archive has one home, and `archive/` is no
@@ -592,13 +593,14 @@ album/browsing model and 2025 API restrictions to app-created content are a poor
 exact-byte round-tripping that stale-frame hash detection depends on — but remains a good fit
 for finished videos (see deferred ideas below), which are naturally photo-library-shaped.
 
-**SD card capacity (documented, not yet executed):** the Pi currently boots from a 4GB card.
-With six cams now capturing (up from four), that card's runway is shorter than originally
-planned — see `docs/open-questions.md` #11 for the growth estimate. The migration process
-to a 64GB card is written up as a runbook in **`docs/sd-card-migration.md`**: a fresh OS
-install on the new card, `rsync` the existing archive over, verify, then physically swap
-cards — preferred over a full-disk clone since it also re-validates `deploy/pi/README.md`'s
-bring-up steps and avoids resizing a cloned partition table. Not yet executed.
+**SD card capacity (executed, 2026-07-30):** the Pi originally booted from a 4GB card. With
+six cams capturing (up from four), that card's runway had gotten shorter than originally
+planned — see `docs/open-questions.md` #11 for the growth estimate. The migration to a 64GB
+card followed the runbook in **`docs/sd-card-migration.md`**: a fresh OS install on the new
+card, `rsync` the existing archive over, verify, then physically swap cards — preferred over
+a full-disk clone since it also re-validated `deploy/pi/README.md`'s bring-up steps and
+avoided resizing a cloned partition table. With the extra headroom, the UNCA tower cam was
+re-enabled and several new speculative cams were added (see the Cams history above).
 
 ## Deferred / follow-on ideas
 

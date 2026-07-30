@@ -167,9 +167,6 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - Long-term storage / cloud backup — Pi frames live on local disk only; the `rclone` bucket
   sync isn't set up yet (see `docs/open-questions.md` #5). The pre-Pi Bluewood frames GitHub
   Actions committed during the hand-off trial remain in git history, not the live archive.
-- SD card migration (4GB → 64GB) — process is documented
-  ([docs/sd-card-migration.md](docs/sd-card-migration.md)) but not yet executed (see
-  `docs/open-questions.md` #11)
 
 ## Quick summary of decisions so far
 

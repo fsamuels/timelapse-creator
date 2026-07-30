@@ -6,13 +6,13 @@ recommendations. None of these are locked in yet.
 ## 1. Where does the capture job run? (decided)
 
 **Decided:** a Raspberry Pi Zero W (`timelapse-pi`) is now the sole capture platform,
-capturing all six cams every 15 minutes via a systemd timer. The Pi was ordered
-2026-07-16.
+capturing all eight cams via a systemd timer (15 min for most, 60 min for unca-tower). The
+Pi was ordered 2026-07-16.
 
 ### The Pi hand-off plan (decided; complete)
 
 **Status:** the hand-off trial is over. The Pi (`timelapse-pi`) is deployed and live —
-running the systemd capture timer against `capture/config.pi.yaml` (all six cams) and
+running the systemd capture timer against `capture/config.pi.yaml` (all eight cams) and
 serving the status page at `http://timelapse-pi.local:8080/`. The git-committed Bluewood
 frames have been migrated onto the Pi's local archive, `capture.yml`'s `schedule:` trigger
 has been removed (`workflow_dispatch` stays as a manual emergency-capture fallback), and
