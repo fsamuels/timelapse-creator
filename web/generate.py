@@ -528,11 +528,11 @@ _FONT_STACK = (
 # (the same green as .cam-status.live) for the flash — reused both as the
 # page's inline logo and, wrapped and data-URI-encoded, as its favicon.
 _LOGO_SVG_BODY = (
-    '<rect x="12" y="6" width="8" height="5" rx="1.5" fill="#12151a" stroke="#3b82f6" '
+    '<rect x="12" y="6" width="8" height="5" rx="1.5" fill="none" stroke="#3b82f6" '
     'stroke-width="2"/>'
-    '<rect x="3" y="10" width="26" height="17" rx="3.5" fill="#12151a" stroke="#3b82f6" '
+    '<rect x="3" y="10" width="26" height="17" rx="3.5" fill="none" stroke="#3b82f6" '
     'stroke-width="2"/>'
-    '<circle cx="16" cy="19" r="6.5" fill="#12151a" stroke="#7dd3fc" stroke-width="2"/>'
+    '<circle cx="16" cy="19" r="6.5" fill="none" stroke="#7dd3fc" stroke-width="2"/>'
     '<line x1="16" y1="19" x2="16" y2="15" stroke="#7dd3fc" stroke-width="1.6" '
     'stroke-linecap="round"/>'
     '<line x1="16" y1="19" x2="19" y2="19" stroke="#f5a524" stroke-width="1.3" '
