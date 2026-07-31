@@ -490,6 +490,7 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                     "name": cam,
                     "key": f"{_slug(site)}--{_slug(cam)}",
                     "url": (cam_cfg or {}).get("url"),
+                    "interval_minutes": (cam_cfg or {}).get("interval_minutes"),
                     "health": health,
                     "recent": recent_strip(counts, today),
                     "full_grid": full_grid,
@@ -789,11 +790,15 @@ def _cam_card_html(cam, now):
     else:
         name_cell = f'<div class="cam-name">{name_html}</div>'
 
+    interval = cam.get("interval_minutes")
+    interval_suffix = f" &middot; every {interval} min" if interval else ""
     if last:
         ago = html.escape(_human_ago(now - last))
-        last_frame = f'{html.escape(last.strftime("%Y-%m-%d %H:%M"))} &middot; {ago}'
+        last_frame = (
+            f'{html.escape(last.strftime("%Y-%m-%d %H:%M"))} &middot; {ago}{interval_suffix}'
+        )
     else:
-        last_frame = "no frames yet"
+        last_frame = f"no frames yet{interval_suffix}"
     status_cls, status_text = ("stale", "STALE") if health["is_stale"] else ("live", "LIVE")
 
     if cam.get("thumb_url"):
