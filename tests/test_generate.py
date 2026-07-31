@@ -337,6 +337,26 @@ def test_build_page_data_orphaned_cam_is_stale_without_crashing(tmp_path):
     assert summit["health"]["is_stale"] is True
 
 
+def test_build_page_data_includes_interval_minutes(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+
+    assert data["sites"][0]["cams"][0]["interval_minutes"] == 15
+
+
+def test_build_page_data_interval_minutes_missing_without_cam_config(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, cam_config={})
+
+    assert data["sites"][0]["cams"][0]["interval_minutes"] is None
+
+
 def test_build_page_data_orders_sites_per_config(tmp_path):
     _write_frame(tmp_path, "seattle", "columbia", "2026-07-16T12-00-00-000000-0800")
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
@@ -472,6 +492,28 @@ def test_render_html_thumb_link_does_not_nest_the_cam_name_link(tmp_path):
     thumb_close = doc.index("</a>", thumb_start)
     name_open = doc.index('class="cam-name"')
     assert not (thumb_start < name_open < thumb_close)
+
+
+def test_render_html_shows_capture_interval_next_to_last_frame(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+    doc = generate.render_html(data, now)
+
+    assert "every 15 min" in doc
+
+
+def test_render_html_omits_capture_interval_when_unconfigured(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now, cam_config={})
+    doc = generate.render_html(data, now)
+
+    assert "every" not in doc
 
 
 def test_render_html_is_self_contained_and_shows_cams(tmp_path):
