@@ -385,6 +385,14 @@ downloaded per day.
   10-minute timer. Each stat/marker is included only if its underlying read succeeded, so
   the footer degrades gracefully (e.g. a non-git deployment) rather than showing a
   fabricated value.
+- **Favicon/logo (2026-07):** a small camera-outline mark with a clock face standing in for
+  the lens (camera + time, for "timelapse") and a green flash dot matching the `LIVE` status
+  pill's color. Defined once as `_LOGO_SVG_BODY` in `web/generate.py` and reused two ways:
+  inline next to the "Capture Status" title, and percent-encoded into a `data:image/svg+xml,`
+  `<link rel="icon">` href for the favicon — no sibling asset file, preserving the page's
+  "single self-contained page, no external assets" design. Shapes are unfilled
+  (`fill="none"`) so the mark reads on any background, not just the page's own dark one —
+  it also has to work as a favicon on a light browser tab strip.
 - **Remote access:** not built now; Tailscale is the documented future option, and would also
   cover remote SSH to the Pi for maintenance, not just this page.
 

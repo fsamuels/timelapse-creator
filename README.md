@@ -74,7 +74,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   into an hourly breakdown for just that day. Also symlinks the raw archive in next to the
   page so it's directly browsable, and a footer shows host stats (uptime, memory, load
   average), how long the page took to generate, and a deployment marker (commit sha8 + date)
-  so it's clear which commit is actually live
+  so it's clear which commit is actually live. A camera/clock favicon and matching header
+  logo (inline SVG, no separate asset file) round it out
 - `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback
