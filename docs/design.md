@@ -320,13 +320,17 @@ downloaded per day.
   number when there's no burn-rate data yet, instead of dividing by zero or fabricating a
   figure.
 - **Cam cards, grouped by site:** each card shows the live thumbnail with a status pill
-  (`LIVE`/`STALE`) and last-frame time overlaid, then avg frame size / frame count / disk
-  usage, then a 31-day recent-activity strip (a quieter, lower-detail cousin of the full
-  heatmap — see below) and a "full history →" link. A group header shows a stale-count
-  badge when any of its cams are stale (hidden otherwise). An optional, off-by-default
-  `web_show_stale_banner: true` config key additionally surfaces an amber "N of M cams
-  stale" banner at the top of the page — off by default because some cams are intentionally
-  disabled for stretches and the team didn't want that flagged on every visit. Site groups
+  (`LIVE`/`STALE`) and last-frame time overlaid — the last-frame time is followed by its
+  configured capture cadence (e.g. "5m ago · every 15 min"), so it's easy to judge whether
+  that gap is normal for the cam rather than a sign of trouble; omitted for a cam with no
+  `interval_minutes` in the current config (e.g. decommissioned) — then avg frame size /
+  frame count / disk usage, then a 31-day recent-activity strip (a quieter, lower-detail
+  cousin of the full heatmap — see below) and a "full history →" link. A group header shows
+  a stale-count badge when any of its cams are stale (hidden otherwise). An optional,
+  off-by-default `web_show_stale_banner: true` config key additionally surfaces an amber "N
+  of M cams stale" banner at the top of the page — off by default because some cams are
+  intentionally disabled for stretches and the team didn't want that flagged on every visit.
+  Site groups
   are ordered by the config's top-level `site_order` list (e.g. `[bluewood, seattle,
   washington, north-carolina]`); a site with archived frames but no entry in `site_order`
   (e.g. a
