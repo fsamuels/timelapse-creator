@@ -36,6 +36,7 @@ import subprocess
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 
@@ -523,6 +524,36 @@ _FONT_STACK = (
     "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace"
 )
 
+# A camera body with a clock face standing in for the lens, and a green dot
+# (the same green as .cam-status.live) for the flash — reused both as the
+# page's inline logo and, wrapped and data-URI-encoded, as its favicon.
+_LOGO_SVG_BODY = (
+    '<rect x="12" y="6" width="8" height="5" rx="1.5" fill="#12151a" stroke="#3b82f6" '
+    'stroke-width="2"/>'
+    '<rect x="3" y="10" width="26" height="17" rx="3.5" fill="#12151a" stroke="#3b82f6" '
+    'stroke-width="2"/>'
+    '<circle cx="16" cy="19" r="6.5" fill="#12151a" stroke="#7dd3fc" stroke-width="2"/>'
+    '<line x1="16" y1="19" x2="16" y2="15" stroke="#7dd3fc" stroke-width="1.6" '
+    'stroke-linecap="round"/>'
+    '<line x1="16" y1="19" x2="19" y2="19" stroke="#f5a524" stroke-width="1.3" '
+    'stroke-linecap="round"/>'
+    '<circle cx="16" cy="19" r="1" fill="#e8eaed"/>'
+    '<circle cx="24" cy="14" r="1.6" fill="#3fb950"/>'
+)
+
+
+def _favicon_href():
+    """Data-URI ``href`` for a ``<link rel="icon">`` using ``_LOGO_SVG_BODY``.
+
+    Keeps the favicon inline rather than a sibling file, matching this page's
+    self-contained design (see module docstring). ``safe=""`` is required so
+    the color hex codes' ``#`` characters get percent-encoded rather than
+    truncating the data URI at a fragment identifier.
+    """
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">{_LOGO_SVG_BODY}</svg>'
+    return "data:image/svg+xml," + quote(svg, safe="")
+
+
 _STYLE = f"""
 *{{box-sizing:border-box}}
 body{{margin:0;background:#0b0d10;font-family:{_FONT_STACK};
@@ -532,6 +563,8 @@ a{{text-decoration:none}}
 .content{{width:100%;max-width:640px;padding:22px 18px 60px}}
 .header{{display:flex;align-items:flex-start;justify-content:space-between;
   gap:12px;flex-wrap:wrap}}
+.title-row{{display:flex;align-items:center;gap:9px}}
+.logo{{width:26px;height:26px;flex:none}}
 .title{{font:700 20px/1.2 {_FONT_STACK};color:#e8eaed;letter-spacing:-.02em}}
 .subtitle{{font:400 11px/1.4 {_FONT_STACK};color:rgba(255,255,255,.4);margin-top:4px}}
 .archive-link{{font:500 11px {_FONT_STACK};color:#7dd3fc;white-space:nowrap;margin-top:2px}}
@@ -878,10 +911,13 @@ def render_html(page_data, now, show_stale_banner=False, system=None):
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<meta http-equiv="refresh" content="900">',  # reload every 15 min
         "<title>Capture Status</title>",
+        f'<link rel="icon" type="image/svg+xml" href="{_favicon_href()}">',
         f"<style>{_STYLE}</style></head><body>",
         '<div class="wrap"><div class="content">',
         '<div class="header"><div>'
-        '<div class="title">Capture Status</div>'
+        '<div class="title-row">'
+        f'<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">{_LOGO_SVG_BODY}</svg>'
+        '<div class="title">Capture Status</div></div>'
         f'<div class="subtitle">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M"))} '
         f'&middot; {html.escape(now.strftime("%Z"))}</div></div>'
         '<a class="archive-link" href="archive/">browse full archive &rarr;</a></div>',
