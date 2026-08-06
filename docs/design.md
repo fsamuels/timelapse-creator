@@ -403,6 +403,13 @@ downloaded per day.
   rest of the page; see `docs/open-questions.md` #8. A proper gallery view (paginated by
   day/cam with thumbnails, generated the same way as the heatmap) is a natural next step on
   top of this rather than a new access decision.
+- **Pulling frames off the Pi for local video builds:** `capture/sync_archive.py` is the
+  client side of that same `/archive/` listing — it recursively mirrors one cam's directory
+  tree from the Pi into a local `archive/<site>/<cam>/` (the same layout `video/main.py`
+  already expects), skipping any frame already present locally so re-running it after the
+  first sync only fetches what's new: `python -m capture.sync_archive <site> <cam>`.
+  Deliberately just a downloader, not a new archive format or protocol — the directory
+  listing above is the only interface it needs.
 - **Footer:** host stats (uptime, memory, load average, read straight from `/proc` rather
   than a library like `psutil` — a C-extension dependency isn't guaranteed to have a
   prebuilt wheel on a Pi Zero W's armv6), how long this run took to gather its data
