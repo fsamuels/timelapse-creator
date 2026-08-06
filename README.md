@@ -68,6 +68,11 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   preserving today's behavior), fetches each cam, skips failures/stale frames, saves new ones, and
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
+- `capture/sync_archive.py` — mirrors one cam's frames from the Pi's `/archive/` directory
+  listing (see `web/generate.py` below) down into a local `archive/<site>/<cam>/`, so the
+  video builder can run against a laptop-local copy instead of the Pi. Skips frames already
+  present locally, so re-running it only pulls what's new: `python -m capture.sync_archive
+  <site> <cam>`
 - `web/generate.py` — regenerates a single static status page (mobile-friendly card layout,
   dark-only, grouped by site in the config's `site_order`): disk-free/runway stat tiles up
   top (runway estimates days of free space left at today's projected burn rate), a per-cam
