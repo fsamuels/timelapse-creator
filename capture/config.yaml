@@ -3,7 +3,7 @@ archive_dir: archive
 cams:
   summit:
     site: bluewood  # frames land under archive/<site>/<cam>/...
-    type: image  # image | stream
+    type: image  # image | stream | youtube
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?"
     interval_minutes: 15
   base:

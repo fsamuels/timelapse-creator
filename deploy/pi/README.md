@@ -2,9 +2,10 @@
 
 Runs the capture job on a Raspberry Pi via systemd — the sole scheduled capture platform for
 this project. **This is deployed and running** on the Pi (hostname `timelapse-pi`), capturing
-**all eight active cams** (the two Bluewood cams, three Seattle cams, two Washington-state
-cams, and the Pi-only UNCA tower North Carolina cam — Nantahala Outdoor Center stays
-commented out) from `capture/config.pi.yaml`.
+**all ten active cams** (the two Bluewood cams, three Seattle cams, two Washington-state
+cams, the Pi-only UNCA tower North Carolina cam — Nantahala Outdoor Center stays
+commented out — and two Hawaii cams, Mauna Kea observatories captured via YouTube live
+streams) from `capture/config.pi.yaml`.
 GitHub Actions previously ran this same capture job on a schedule too, in parallel, for a
 ~1-2 week hand-off trial (see `docs/open-questions.md` #1). That trial is complete: the
 schedule trigger is disabled, and `.github/workflows/capture.yml` now exists only as a manual
@@ -23,7 +24,8 @@ here as a reference for any future card swap.
 
    ```
    sudo apt update
-   sudo apt install -y git python3-venv python3-pip build-essential python3-dev libyaml-dev
+   sudo apt install -y git python3-venv python3-pip build-essential python3-dev libyaml-dev \
+       ffmpeg
    sudo git clone https://github.com/<owner>/timelapse-creator.git /opt/timelapse-creator
    sudo chown -R $USER:$USER /opt/timelapse-creator
    ```
@@ -31,7 +33,10 @@ here as a reference for any future card swap.
    Raspberry Pi OS Lite doesn't ship `git` by default, and `python3 -m venv` needs
    `python3-venv` installed separately on Debian-based systems — both are needed before step
    2 below. `build-essential`/`python3-dev`/`libyaml-dev` cover step 2's armv6 wheel-build
-   caveat up front.
+   caveat up front. `ffmpeg` is needed by `capture/fetch.py`'s `type: stream`/`type: youtube`
+   cams (the two Hawaii cams currently) — `yt-dlp` itself comes from `requirements.txt` in
+   step 2, but it shells out to the system `ffmpeg` binary to grab a frame, so `ffmpeg` isn't
+   a pip package here.
 
    `timelapse-update.service` (step 4) instead runs `update.sh` as root, so root also
    needs permission to `git pull` here despite the repo being owned by `$USER` — otherwise
@@ -218,7 +223,7 @@ port-forwarding.
 ## Status
 
 Deployed and confirmed working on the Pi (`timelapse-pi`): the capture timer runs against
-`capture/config.pi.yaml` (all eight active cams, most at 15 min, unca-tower at 60 min), and
+`capture/config.pi.yaml` (all ten active cams, most at 15 min, unca-tower at 60 min), and
 the status page is live at `http://timelapse-pi.local:8080/`. The paths in the unit files
 match that deployment (`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust them if yours
 differ.
