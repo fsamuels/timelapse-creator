@@ -457,6 +457,32 @@ def test_build_page_data_pairs_health_with_log(tmp_path):
     assert summit["health"]["outcome"]["outcome"] == "saved"
 
 
+def test_build_page_data_carries_display_name_from_config(tmp_path):
+    _write_frame(tmp_path, "hawaii", "cfht", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={
+            "cfht": {"display_name": "Canada-France-Hawaii Telescope", "interval_minutes": 15}
+        },
+    )
+
+    cfht = data["sites"][0]["cams"][0]
+    assert cfht["display_name"] == "Canada-France-Hawaii Telescope"
+
+
+def test_build_page_data_display_name_is_none_when_unconfigured(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+
+    assert data["sites"][0]["cams"][0]["display_name"] is None
+
+
 def test_render_html_links_cam_name_to_its_url(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
@@ -492,6 +518,36 @@ def test_render_html_thumb_link_does_not_nest_the_cam_name_link(tmp_path):
     thumb_close = doc.index("</a>", thumb_start)
     name_open = doc.index('class="cam-name"')
     assert not (thumb_start < name_open < thumb_close)
+
+
+def test_render_html_shows_display_name_above_the_slug(tmp_path):
+    _write_frame(tmp_path, "hawaii", "cfht", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={
+            "cfht": {"display_name": "Canada-France-Hawaii Telescope", "interval_minutes": 15}
+        },
+    )
+    doc = generate.render_html(data, now)
+
+    assert '<div class="cam-display-name">Canada-France-Hawaii Telescope</div>' in doc
+    display_name_pos = doc.index("cam-display-name")
+    name_pos = doc.index('class="cam-name"')
+    assert display_name_pos < name_pos
+
+
+def test_render_html_omits_display_name_when_unconfigured(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert '<div class="cam-display-name">' not in doc
 
 
 def test_render_html_shows_capture_interval_next_to_last_frame(tmp_path):

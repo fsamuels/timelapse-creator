@@ -35,7 +35,7 @@ web_output: /var/lib/timelapse/www/index.html  # status page (web/generate.py)
 # Site display order on the status page (web/generate.py); sites not listed
 # here (e.g. a decommissioned site whose old frames are still on disk) sort
 # after these, alphabetically.
-site_order: [bluewood, seattle, washington, north-carolina, hawaii]
+site_order: [bluewood, seattle, washington, hawaii, north-carolina]
 
 cams:
   columbia:
@@ -91,10 +91,12 @@ cams:
   cfht:
     site: hawaii
     type: youtube
+    display_name: "Canada-France-Hawaii Telescope"
     url: "https://www.youtube.com/watch?v=MPokOMJvZ-g"
     interval_minutes: 15
   subaru-telescope:
     site: hawaii
     type: youtube
+    display_name: "Subaru Telescope"
     url: "https://www.youtube.com/channel/UCiN7OwV8g8dMm_E0xphBVig/live"
     interval_minutes: 15

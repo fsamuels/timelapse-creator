@@ -41,6 +41,16 @@ if [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
   exit 0
 fi
 
+echo "==> Ensuring system dependencies are installed"
+# requirements.txt only covers pip packages; ffmpeg is a system binary that
+# type: stream/type: youtube cams shell out to (capture/fetch.py) and can't
+# come from pip. Cheap to check every run rather than gating behind a diff of
+# which files changed.
+if ! command -v ffmpeg >/dev/null; then
+  sudo apt-get update -q
+  sudo apt-get install -y ffmpeg
+fi
+
 echo "==> Installing dependencies"
 .venv/bin/pip install -q -r requirements.txt
 

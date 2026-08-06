@@ -143,13 +143,6 @@ archive/
     kalaloch-lodge/
       2026/07/
         ...
-  north-carolina/
-    unca-tower/
-      2026/07/
-        ...
-    nantahala-outdoor-center/
-      2026/07/
-        ...
   hawaii/
     cfht/
       2026/08/
@@ -157,15 +150,22 @@ archive/
     subaru-telescope/
       2026/08/
         ...
+  north-carolina/
+    unca-tower/
+      2026/07/
+        ...
+    nantahala-outdoor-center/
+      2026/07/
+        ...
 ```
 
 - The archive is grouped `archive/<site>/<cam>/YYYY/MM/`. Each cam declares its
   `site` in the config (`config.yaml`'s cams are `bluewood`; `config.pi.yaml`'s are
-  `seattle`, `washington`, `north-carolina`, and `hawaii`), and `capture/main.py` writes to
+  `seattle`, `washington`, `hawaii`, and `north-carolina`), and `capture/main.py` writes to
   `archive_root / site /
   name`. Grouping by site keeps the two Bluewood cams together and separate from the
-  Seattle pipeline-development cams, the Washington-state cams, the North Carolina cams, and
-  the Hawaii cams — and lets a single config
+  Seattle pipeline-development cams, the Washington-state cams, the Hawaii cams, and the
+  North Carolina cams — and lets a single config
   capture multiple sites at once (the Pi hand-off, `docs/open-questions.md` #1) without them
   colliding in one flat namespace.
 - Filenames are timestamps with microsecond precision (avoids collisions if two frames for
@@ -345,14 +345,18 @@ downloaded per day.
   that gap is normal for the cam rather than a sign of trouble; omitted for a cam with no
   `interval_minutes` in the current config (e.g. decommissioned) — then avg frame size /
   frame count / disk usage, then a 31-day recent-activity strip (a quieter, lower-detail
-  cousin of the full heatmap — see below) and a "full history →" link. A group header shows
+  cousin of the full heatmap — see below) and a "full history →" link. An optional per-cam
+  `display_name` config key, if set, renders as a small caption above the cam's slug in the
+  thumbnail overlay (e.g. "Canada-France-Hawaii Telescope" above `cfht`) — added for the
+  Hawaii cams, whose slugs alone aren't obviously identifiable; a cam with no `display_name`
+  set shows just its slug, unchanged from before. A group header shows
   a stale-count badge when any of its cams are stale (hidden otherwise). An optional,
   off-by-default `web_show_stale_banner: true` config key additionally surfaces an amber "N
   of M cams stale" banner at the top of the page — off by default because some cams are
   intentionally disabled for stretches and the team didn't want that flagged on every visit.
   Site groups
   are ordered by the config's top-level `site_order` list (e.g. `[bluewood, seattle,
-  washington, north-carolina, hawaii]`); a site with archived frames but no entry in
+  washington, hawaii, north-carolina]`); a site with archived frames but no entry in
   `site_order`
   (e.g. a
   decommissioned site) sorts after the listed ones, alphabetically.
