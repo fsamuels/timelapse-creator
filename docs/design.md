@@ -14,9 +14,9 @@
   - Summit: `https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?`
   - Base: `https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403629/bwdbase.jpg?`
 
-  `capture/fetch.py` still supports the "grab one frame from a video stream via ffmpeg" case
-  (`fetch_stream_frame`) for a future cam that isn't a plain image, but neither current cam
-  needs it.
+  `capture/fetch.py` also supports the "grab one frame from a video stream via ffmpeg" case
+  (`fetch_stream_frame`, `type: stream`) for a cam that isn't a plain image — neither Bluewood
+  cam needs it, but the Hawaii cams below do, via `type: youtube` (see below).
 - **Bonus find:** the cams are live in July (off-season) because the resort is doing
   maintenance and replacing the old 3-person lift with a high-speed quad — a second,
   time-sensitive timelapse subject alongside the season-long snow one.
@@ -54,7 +54,20 @@
   under `seattle`, and a new `washington` site was created for Washington-state cams that
   aren't Seattle-specific: Mount Rainier (moved out of `seattle`) and Kalaloch Lodge, both
   `interval_minutes: 15`. Speculative additions while there's card headroom — expect some to
-  get trimmed later. The Pi now captures eight cams total.
+  get trimmed later.
+- **Hawaii cams added (Pi-only), first use of `type: youtube`.** Two Mauna Kea observatory
+  cams — CFHT (Canada-France-Hawaii Telescope) and the Subaru Telescope — under a new
+  `hawaii` site. Both are YouTube live streams, not plain images, which needed a new capture
+  type: `capture/fetch.py`'s `fetch_youtube_frame` resolves the configured YouTube watch/
+  channel URL to a direct stream URL via `yt-dlp -g -f best`, then feeds that URL to the
+  existing `fetch_stream_frame` (ffmpeg) exactly as `type: stream` does — `yt-dlp` is the only
+  new piece, added as a dependency in `requirements.txt`, and `ffmpeg` itself is now a
+  documented system dependency in `deploy/pi/README.md` rather than a currently-unused one.
+  `cfht`'s configured URL is a fixed watch URL (a long-running 24/7 stream); `subaru-
+  telescope`'s is a channel `/live` URL, since that channel's live video ID changes over
+  time. Both `interval_minutes: 15`, though this is a heavier per-fetch than a plain image GET
+  (yt-dlp resolution + ffmpeg decode vs. one HTTP GET), worth revisiting if Pi CPU load
+  becomes a problem. The Pi now captures ten cams total.
 
 ## Architecture: two decoupled pieces
 
@@ -130,6 +143,13 @@ archive/
     kalaloch-lodge/
       2026/07/
         ...
+  hawaii/
+    cfht/
+      2026/08/
+        ...
+    subaru-telescope/
+      2026/08/
+        ...
   north-carolina/
     unca-tower/
       2026/07/
@@ -141,11 +161,11 @@ archive/
 
 - The archive is grouped `archive/<site>/<cam>/YYYY/MM/`. Each cam declares its
   `site` in the config (`config.yaml`'s cams are `bluewood`; `config.pi.yaml`'s are
-  `seattle`, `washington`, and `north-carolina`), and `capture/main.py` writes to
+  `seattle`, `washington`, `hawaii`, and `north-carolina`), and `capture/main.py` writes to
   `archive_root / site /
   name`. Grouping by site keeps the two Bluewood cams together and separate from the
-  Seattle pipeline-development cams, the Washington-state cams, and the North Carolina cams
-  — and lets a single config
+  Seattle pipeline-development cams, the Washington-state cams, the Hawaii cams, and the
+  North Carolina cams — and lets a single config
   capture multiple sites at once (the Pi hand-off, `docs/open-questions.md` #1) without them
   colliding in one flat namespace.
 - Filenames are timestamps with microsecond precision (avoids collisions if two frames for
@@ -170,7 +190,7 @@ archive/
 **Deployed and running** (see `docs/open-questions.md` #1): a systemd timer runs the same
 `capture/` code on the Pi (hostname `timelapse-pi`), writing to local disk at
 `/var/lib/timelapse/archive` instead of committing to git (see storage below), and capturing
-all eight active cams (most every 15 minutes, unca-tower hourly). GitHub Actions ran in
+all ten active cams (most every 15 minutes, unca-tower hourly). GitHub Actions ran in
 parallel for a ~1-2 week trial to confirm the
 Pi was reliable; that trial is complete, its schedule trigger is disabled, and manual
 `workflow_dispatch` stays available as an emergency fallback. The existing git-committed
@@ -325,14 +345,19 @@ downloaded per day.
   that gap is normal for the cam rather than a sign of trouble; omitted for a cam with no
   `interval_minutes` in the current config (e.g. decommissioned) — then avg frame size /
   frame count / disk usage, then a 31-day recent-activity strip (a quieter, lower-detail
-  cousin of the full heatmap — see below) and a "full history →" link. A group header shows
+  cousin of the full heatmap — see below) and a "full history →" link. An optional per-cam
+  `display_name` config key, if set, renders as a small caption above the cam's slug in the
+  thumbnail overlay (e.g. "Canada-France-Hawaii Telescope" above `cfht`) — added for the
+  Hawaii cams, whose slugs alone aren't obviously identifiable; a cam with no `display_name`
+  set shows just its slug, unchanged from before. A group header shows
   a stale-count badge when any of its cams are stale (hidden otherwise). An optional,
   off-by-default `web_show_stale_banner: true` config key additionally surfaces an amber "N
   of M cams stale" banner at the top of the page — off by default because some cams are
   intentionally disabled for stretches and the team didn't want that flagged on every visit.
   Site groups
   are ordered by the config's top-level `site_order` list (e.g. `[bluewood, seattle,
-  washington, north-carolina]`); a site with archived frames but no entry in `site_order`
+  washington, hawaii, north-carolina]`); a site with archived frames but no entry in
+  `site_order`
   (e.g. a
   decommissioned site) sorts after the listed ones, alphabetically.
 - **Full-history modal:** "full history →" opens a bottom-sheet with the same 13-week

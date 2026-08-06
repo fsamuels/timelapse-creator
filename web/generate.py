@@ -453,8 +453,9 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
     """Gather everything the template needs from the archive and the log.
 
     ``cam_config`` is the capture config's ``cams`` mapping (cam name -> dict
-    with ``url`` and ``interval_minutes``), used to link each cam's name to
-    its live image and to size its stale threshold.
+    with ``url``, ``interval_minutes``, and optionally ``display_name``), used
+    to link each cam's name to its live image, size its stale threshold, and
+    (if set) show a human-readable label above the cam's slug on its card.
 
     ``site_order`` is the config's top-level ``site_order`` list, controlling
     the order sites are displayed in; sites not listed sort after, alphabetically.
@@ -488,6 +489,7 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
             cam_views.append(
                 {
                     "name": cam,
+                    "display_name": (cam_cfg or {}).get("display_name"),
                     "key": f"{_slug(site)}--{_slug(cam)}",
                     "url": (cam_cfg or {}).get("url"),
                     "interval_minutes": (cam_cfg or {}).get("interval_minutes"),
@@ -606,6 +608,8 @@ a{{text-decoration:none}}
 .cam-photo-overlay{{position:absolute;left:14px;right:14px;bottom:10px;display:flex;
   align-items:flex-end;justify-content:space-between;gap:8px;pointer-events:none}}
 .cam-photo-overlay a{{pointer-events:auto}}
+.cam-display-name{{font:600 10.5px {_FONT_STACK};color:rgba(255,255,255,.65);
+  letter-spacing:.03em;margin-bottom:1px}}
 .cam-name{{font:700 16px {_FONT_STACK};color:#fff}}
 .cam-last-frame{{font:400 11px {_FONT_STACK};color:rgba(255,255,255,.85);margin-top:2px}}
 .cam-status{{font:600 9.5px {_FONT_STACK};padding:3px 9px;border-radius:20px;flex:none}}
@@ -789,6 +793,11 @@ def _cam_card_html(cam, now):
         )
     else:
         name_cell = f'<div class="cam-name">{name_html}</div>'
+    display_name_cell = (
+        f'<div class="cam-display-name">{html.escape(cam["display_name"])}</div>'
+        if cam.get("display_name")
+        else ""
+    )
 
     interval = cam.get("interval_minutes")
     interval_suffix = f" &middot; every {interval} min" if interval else ""
@@ -819,7 +828,7 @@ def _cam_card_html(cam, now):
         f'<div class="cam-photo">{photo_inner}'
         '<div class="cam-photo-gradient"></div>'
         '<div class="cam-photo-overlay">'
-        f'<div>{name_cell}<div class="cam-last-frame">{last_frame}</div></div>'
+        f'<div>{display_name_cell}{name_cell}<div class="cam-last-frame">{last_frame}</div></div>'
         f'<span class="cam-status {status_cls}">{status_text}</span>'
         "</div></div>"
     )
