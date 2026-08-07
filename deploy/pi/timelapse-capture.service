@@ -4,6 +4,11 @@ Description=Capture webcam frames for timelapse-creator (Pi)
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/timelapse-creator
+# yt-dlp is pip-installed into the venv (requirements.txt), not apt-installed
+# like ffmpeg, so it only exists at .venv/bin/yt-dlp — without this on PATH,
+# capture/fetch.py's `subprocess.run(["yt-dlp", ...])` fails with ENOENT for
+# every type: youtube cam (see Hawaii cams outage, 2026-08-06).
+Environment=PATH=/opt/timelapse-creator/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 ExecStart=/opt/timelapse-creator/.venv/bin/python -m capture.main --config capture/config.pi.yaml
 # Regenerate the static status page right after each capture (web_output path
 # comes from the config). Non-fatal: a failed page render must not fail capture.
