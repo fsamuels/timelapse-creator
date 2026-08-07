@@ -23,10 +23,15 @@
 # (capture/fetch.py's fetch_youtube_frame — yt-dlp resolves the watch/channel
 # URL to a direct stream URL, then ffmpeg grabs one frame, same as `type:
 # stream`). cfht is a fixed watch URL (a long-running 24/7 stream); subaru-
-# telescope points at a channel's `/live` URL since that channel's live video
-# ID changes. Heavier per-fetch than a plain image GET (yt-dlp resolution +
-# ffmpeg decode), so kept at every 15 min for now but worth revisiting if Pi
-# CPU load climbs.
+# telescope is also pinned to a specific watch URL — the channel's `/live`
+# URL was tried first but proved unreliable, resolving to whatever the
+# channel currently features (including archived/non-live videos from other
+# telescopes on the same channel) rather than an actual live Subaru feed. If
+# this video ID goes stale, re-check the channel for the current live Subaru
+# stream and update the pinned ID (see PR discussion 2026-08-06).
+# Heavier per-fetch than a plain image GET (yt-dlp resolution + ffmpeg
+# decode), so kept at every 15 min for now but worth revisiting if Pi CPU
+# load climbs.
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
@@ -98,5 +103,5 @@ cams:
     site: hawaii
     type: youtube
     display_name: "Subaru Telescope"
-    url: "https://www.youtube.com/channel/UCiN7OwV8g8dMm_E0xphBVig/live"
+    url: "https://www.youtube.com/watch?v=6g4Fh8K-MhY"
     interval_minutes: 15
