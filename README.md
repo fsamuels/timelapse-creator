@@ -39,6 +39,7 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 | Document | Contents |
 | --- | --- |
 | [docs/design.md](docs/design.md) | Architecture: the capture job, the video builder, drone-photo normalization (alignment methods, manual anchors), video build-time QA labels/color correction, storage layout, and outage/stale-frame handling |
+| [docs/scripts.md](docs/scripts.md) | Every locally-runnable script, its full option list, and copy-pasteable examples — start here to run this repo's tools yourself, without going through an assistant |
 | [docs/open-questions.md](docs/open-questions.md) | Decisions made so far and what's still open (output format, gap handling in video, long-term storage), with options and recommendations |
 | [docs/sd-card-migration.md](docs/sd-card-migration.md) | Runbook for migrating the Pi's SD card from 4GB to 64GB (executed 2026-07-30) |
 
@@ -68,6 +69,11 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   preserving today's behavior), fetches each cam, skips failures/stale frames, saves new ones, and
   appends to a persisted capture log when the config provides a `capture_log` path
 - `capture/capture_log.py` — appends one JSONL line per cam per run (timestamp, outcome, detail)
+- `capture/sync_archive.py` — mirrors one cam's frames from the Pi's `/archive/` directory
+  listing (see `web/generate.py` below) down into a local `archive/<site>/<cam>/`, so the
+  video builder can run against a laptop-local copy instead of the Pi. Skips frames already
+  present locally, so re-running it only pulls what's new: `python -m capture.sync_archive
+  <site> <cam>`
 - `web/generate.py` — regenerates a single static status page (mobile-friendly card layout,
   dark-only, grouped by site in the config's `site_order`): disk-free/runway stat tiles up
   top (runway estimates days of free space left at today's projected burn rate), a per-cam
