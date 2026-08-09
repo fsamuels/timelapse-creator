@@ -32,6 +32,8 @@
 # Heavier per-fetch than a plain image GET (yt-dlp resolution + ffmpeg
 # decode), so kept at every 15 min for now but worth revisiting if Pi CPU
 # load climbs.
+# A new oregon site adds spout-springs-east (ODOT TripCheck image, OR 204 at
+# Spout Springs, East-facing), every 15 min.
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
@@ -40,7 +42,7 @@ web_output: /var/lib/timelapse/www/index.html  # status page (web/generate.py)
 # Site display order on the status page (web/generate.py); sites not listed
 # here (e.g. a decommissioned site whose old frames are still on disk) sort
 # after these, alphabetically.
-site_order: [bluewood, seattle, washington, hawaii, north-carolina]
+site_order: [bluewood, seattle, washington, hawaii, north-carolina, oregon]
 
 cams:
   columbia:
@@ -93,6 +95,12 @@ cams:
   #   type: image
   #   url: "https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20Nantahala%20Outdoor%20Center.png"
   #   interval_minutes: 60
+  spout-springs-east:
+    site: oregon
+    type: image
+    display_name: "OR 204 at Spout Springs (East)"
+    url: "https://tripcheck.com/roadcams/cams/ORE204%20at%20Spout%20Springs_pid4503.jpg?0.965634209484643"
+    interval_minutes: 15
   cfht:
     site: hawaii
     type: youtube
