@@ -391,3 +391,9 @@ status page's per-cam and total disk-usage figures (`web/generate.py`).
       CLI is the core (presets deferred); gaps are skipped silently, no timestamp overlay.
 - [x] Lock `main` down with branch protection requiring PRs for everyone, no bypass, plus
       the `lint-and-test` status check (see question 7 follow-up)
+- [ ] Drop `capture/config.pi.yaml` and migrate everything onto `capture/config.yaml` — we're
+      never going back to GitHub Actions for capture (question 1), so the split between a
+      Pi-only config and a GitHub-Actions-era config no longer earns its keep. Fold the
+      Pi-only cams/sites and the `capture_log`/`web_output`/`site_order` keys into
+      `config.yaml`, update `deploy/pi/` units and docs to point at it, then delete
+      `config.pi.yaml`.
