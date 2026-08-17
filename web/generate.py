@@ -51,6 +51,8 @@ RECENT_DAYS = 31  # the compact recent-activity strip on each cam card
 HEATMAP_LEVELS = 2  # off / low / high — see _level()
 STALE_MULTIPLIER = 2  # flag a cam stale after this many missed capture intervals
 RUNWAY_WARN_DAYS = 14  # runway at or below this is flagged in warning red
+DISK_FREE_WARN_PCT = 25  # % free at or below this turns the disk bar yellow
+DISK_FREE_CRITICAL_PCT = 10  # % free at or below this turns the disk bar red
 
 
 def scan_archive(archive_dir):
@@ -584,7 +586,10 @@ a{{text-decoration:none}}
 .stat-value.warn{{color:#ff6b6b}}
 .stat-bar{{height:5px;background:rgba(255,255,255,.08);border-radius:3px;
   margin-top:9px;overflow:hidden}}
-.stat-bar-fill{{height:100%;background:#f5a524}}
+.stat-bar-fill{{height:100%}}
+.stat-bar-fill.bar-ok{{background:#3fb950}}
+.stat-bar-fill.bar-warn{{background:#f5a524}}
+.stat-bar-fill.bar-critical{{background:#ff6b6b}}
 .stat-sub{{font:400 10px {_FONT_STACK};color:rgba(255,255,255,.35);
   margin-top:6px;line-height:1.5}}
 .group{{margin-top:26px}}
@@ -946,13 +951,21 @@ def render_html(page_data, now, show_stale_banner=False, system=None):
 
     if disk:
         used_pct = disk["used"] / disk["total"] * 100 if disk["total"] else 0
+        free_pct = disk["free"] / disk["total"] * 100 if disk["total"] else 100
+        if free_pct <= DISK_FREE_CRITICAL_PCT:
+            bar_cls = " bar-critical"
+        elif free_pct <= DISK_FREE_WARN_PCT:
+            bar_cls = " bar-warn"
+        else:
+            bar_cls = " bar-ok"
         stats = [
             '<div class="stat-card"><div class="stat-label">Disk free</div>'
             f'<div class="stat-value">{html.escape(_human_bytes(disk["free"]))}</div>'
             '<div class="stat-bar">'
-            f'<div class="stat-bar-fill" style="width:{used_pct:.1f}%"></div></div>'
+            f'<div class="stat-bar-fill{bar_cls}" style="width:{used_pct:.1f}%"></div></div>'
             f'<div class="stat-sub">of {html.escape(_human_bytes(disk["total"]))} '
-            f'&middot; {html.escape(_human_bytes(disk["used"]))} used</div></div>'
+            f'&middot; {html.escape(_human_bytes(disk["used"]))} used '
+            f"&middot; {free_pct:.0f}% free</div></div>"
         ]
         warn_cls = " warn" if runway_days is not None and runway_days <= RUNWAY_WARN_DAYS else ""
         if burn:
