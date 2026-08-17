@@ -1,0 +1,8 @@
+{
+  "extraKnownMarketplaces": {
+    "sdlc-standards": {
+      "source": { "source": "github", "repo": "fsamuels/sdlc-standards" }
+    }
+  },
+  "enabledPlugins": { "sdlc@sdlc-standards": true }
+}

@@ -13,11 +13,18 @@ it might not be needed later.
 
 ## Branching
 
-Prefix every branch with the type of change, then a short kebab-case description:
+Follows the shared [SDLC standard](https://github.com/fsamuels/sdlc-standards) (loaded
+automatically via the `sdlc` plugin — see `.claude/settings.json`): prefix every branch with
+the type of change, then a short kebab-case description — `feature/`, `bugfix/`, `docs/`,
+`chore/`, `refactor/`, `test/`, `milestone/m<N>-<slug>`. Pick the one that best matches the
+primary intent of the change. This repo used `fix/` before adopting the standard; new work
+uses `bugfix/` instead, and old `fix/*` branches are left alone. `ci/` and `perf/` aren't in
+the standard's set — kept here as this repo's own extensions for changes that don't fit any
+of the above.
 
 ```
 feature/video-builder-cli
-fix/stale-frame-false-positive
+bugfix/stale-frame-false-positive
 docs/update-open-questions
 chore/bump-requests-version
 refactor/split-archive-module
@@ -25,12 +32,16 @@ test/archive-stale-detection
 ci/add-lint-workflow
 ```
 
-Standard prefixes: `feature/`, `fix/`, `docs/`, `chore/`, `refactor/`, `test/`, `ci/`,
-`perf/`. Pick the one that best matches the primary intent of the change.
-
-Exception: Claude Code web/cloud sessions get a harness-assigned branch name
-(`claude/<slug>`) that can't be renamed mid-session — that's fine, no need to match the
-scheme above for those.
+**Standing permission: platform-assigned branches.** Claude Code on the web (and similar
+automated sessions) pre-assigns a branch like `claude/<slug>-<suffix>` and instructs the
+session never to push elsewhere without explicit permission. **This is that permission, in
+advance.** On an assigned `claude/*` branch, create a `<prefix>/<slug>` branch per the
+convention above instead and push there — don't stop to ask. Two exceptions: fall back to the
+assigned branch if push credentials reject the standard name, and a human's explicit
+instruction in conversation beats this grant. This is written here, not left to the plugin's
+own `core.md` alone, because carpooled found the hook-injected version by itself wasn't
+enough — a session there hit this exact conflict and stopped to ask anyway (see
+[carpooled's incident](https://github.com/packagedeallabs-ship-it/carpooled/blob/main/CONTRIBUTING.md#the-process-standard)).
 
 ## Commit messages
 
