@@ -88,6 +88,14 @@ def drop_dark_frames(frame_list, threshold):
     return [(path, ts) for path, ts in frame_list if mean_brightness(path) >= threshold]
 
 
+def drop_bright_frames(frame_list, threshold):
+    """Drop frames whose mean brightness (0-255 grayscale) is at or above
+    threshold -- the inverse of drop_dark_frames, for a night-only (sunset
+    to sunrise) timelapse.
+    """
+    return [(path, ts) for path, ts in frame_list if mean_brightness(path) < threshold]
+
+
 def drop_duplicate_frames(frame_list):
     """Drop frames whose bytes exactly match the immediately preceding kept
     frame -- residual near-duplicates that slipped past capture-time

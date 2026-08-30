@@ -79,6 +79,18 @@ def test_drop_dark_frames_keeps_bright_drops_dark(tmp_path):
     assert [p.name for p, _ in result] == ["bright.jpg"]
 
 
+def test_drop_bright_frames_keeps_dark_drops_bright(tmp_path):
+    bright = tmp_path / "bright.jpg"
+    dark = tmp_path / "dark.jpg"
+    _write_jpeg(bright, color=(230, 230, 230))
+    _write_jpeg(dark, color=(5, 5, 5))
+    frame_list = [(bright, datetime(2026, 1, 1)), (dark, datetime(2026, 1, 2))]
+
+    result = frames.drop_bright_frames(frame_list, threshold=40)
+
+    assert [p.name for p, _ in result] == ["dark.jpg"]
+
+
 def test_drop_duplicate_frames_drops_consecutive_exact_matches(tmp_path):
     a = tmp_path / "a.jpg"
     b = tmp_path / "b.jpg"

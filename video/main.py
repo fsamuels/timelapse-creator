@@ -104,6 +104,12 @@ def parse_args():
         help="Drop frames below --dark-threshold mean brightness (e.g. night frames)",
     )
     parser.add_argument(
+        "--keep-dark",
+        action="store_true",
+        help="Keep only frames below --dark-threshold mean brightness -- the inverse of "
+        "--drop-dark, for a night-only (sunset to sunrise) timelapse",
+    )
+    parser.add_argument(
         "--dark-threshold",
         type=float,
         default=40.0,
@@ -160,6 +166,8 @@ def parse_args():
         args.white_balance_patch is None or args.white_balance_target is None
     ):
         parser.error("--white-balance requires --white-balance-patch and --white-balance-target")
+    if args.drop_dark and args.keep_dark:
+        parser.error("--drop-dark and --keep-dark are mutually exclusive")
     return args
 
 
@@ -171,6 +179,11 @@ def select_frames(args):
         before = len(selected)
         selected = frames.drop_dark_frames(selected, args.dark_threshold)
         log.info("dropped %d dark frame(s)", before - len(selected))
+
+    if args.keep_dark:
+        before = len(selected)
+        selected = frames.drop_bright_frames(selected, args.dark_threshold)
+        log.info("dropped %d bright frame(s)", before - len(selected))
 
     if args.dedupe:
         before = len(selected)
