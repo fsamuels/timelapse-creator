@@ -67,7 +67,7 @@ here as a reference for any future card swap.
    needs, so this shouldn't require any extra intervention.
 
 3. Create the local-disk storage directory used by `capture/config.pi.yaml`
-   (`archive_dir`, `capture_log`, and the status page's `web_output`):
+   (`archive_dir`, `capture_log`, `max_uptime_log`, and the status page's `web_output`):
 
    ```
    sudo mkdir -p /var/lib/timelapse/www

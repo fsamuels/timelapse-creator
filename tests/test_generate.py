@@ -1073,3 +1073,76 @@ def test_render_html_runway_gets_warn_class_when_low(tmp_path):
 
     if data["runway_days"] is not None and data["runway_days"] <= generate.RUNWAY_WARN_DAYS:
         assert '<div class="stat-value warn">' in doc
+
+
+def test_read_max_uptime_record_missing_file_is_none(tmp_path):
+    assert generate.read_max_uptime_record(tmp_path / "nope.json") is None
+
+
+def test_read_max_uptime_record_no_path_is_none():
+    assert generate.read_max_uptime_record(None) is None
+
+
+def test_update_max_uptime_record_creates_record_when_none_exists(tmp_path):
+    path = tmp_path / "max_uptime.json"
+    now = datetime(2026, 7, 16, 12, 0, tzinfo=PACIFIC)
+
+    record = generate.update_max_uptime_record(path, 3 * 86400, now)
+
+    assert record["uptime_seconds"] == 3 * 86400
+    assert record["start"] == (now - timedelta(days=3)).isoformat()
+    assert record["end"] == now.isoformat()
+    assert generate.read_max_uptime_record(path) == record
+
+
+def test_update_max_uptime_record_rolls_forward_while_still_the_record(tmp_path):
+    path = tmp_path / "max_uptime.json"
+    boot = datetime(2026, 7, 10, 8, 0, tzinfo=PACIFIC)
+
+    generate.update_max_uptime_record(
+        path,
+        int((datetime(2026, 7, 16, 8, 0, tzinfo=PACIFIC) - boot).total_seconds()),
+        datetime(2026, 7, 16, 8, 0, tzinfo=PACIFIC),
+    )
+    later = datetime(2026, 7, 17, 8, 0, tzinfo=PACIFIC)
+    record = generate.update_max_uptime_record(path, int((later - boot).total_seconds()), later)
+
+    assert record["uptime_seconds"] == int((later - boot).total_seconds())
+    assert record["start"] == boot.isoformat()
+    assert record["end"] == later.isoformat()
+
+
+def test_update_max_uptime_record_ignores_a_shorter_uptime(tmp_path):
+    path = tmp_path / "max_uptime.json"
+    now = datetime(2026, 7, 16, 12, 0, tzinfo=PACIFIC)
+    generate.update_max_uptime_record(path, 10 * 86400, now)
+
+    after_reboot = datetime(2026, 7, 17, 12, 0, tzinfo=PACIFIC)
+    record = generate.update_max_uptime_record(path, 3600, after_reboot)
+
+    assert record["uptime_seconds"] == 10 * 86400
+    assert record["end"] == now.isoformat()
+
+
+def test_update_max_uptime_record_no_path_or_uptime_is_none(tmp_path):
+    now = datetime(2026, 7, 16, 12, 0, tzinfo=PACIFIC)
+    assert generate.update_max_uptime_record(None, 3600, now) is None
+    assert generate.update_max_uptime_record(tmp_path / "x.json", None, now) is None
+
+
+def test_render_html_footer_shows_longest_uptime(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    system = {
+        "uptime_seconds": 4 * 3600,
+        "max_uptime": {
+            "uptime_seconds": 12 * 86400 + 4 * 3600,
+            "start": "2026-06-01T08:00:00-07:00",
+            "end": "2026-06-13T12:00:00-07:00",
+        },
+    }
+    doc = generate.render_html(data, now, system=system)
+
+    assert "Longest uptime 12d 4h &middot; 2026-06-01 &rarr; 2026-06-13" in doc
