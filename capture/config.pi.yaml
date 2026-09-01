@@ -38,6 +38,7 @@
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
 web_output: /var/lib/timelapse/www/index.html  # status page (web/generate.py)
+max_uptime_log: /var/lib/timelapse/max_uptime.json  # longest-uptime record (web/generate.py)
 
 # Site display order on the status page (web/generate.py); sites not listed
 # here (e.g. a decommissioned site whose old frames are still on disk) sort

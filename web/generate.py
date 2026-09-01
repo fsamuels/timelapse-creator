@@ -14,9 +14,10 @@ an empty sub-grid.
 
 Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
 so it's directly browsable, reports per-cam and total disk usage, and shows a
-footer of host stats (uptime, memory, load average, and how long this run took
-to gather its data — see ``system_stats``) plus a deployment marker (commit
-sha8 and date — see ``read_git_info``), so it's obvious which commit is
+footer of host stats (uptime, longest recorded uptime streak — see
+``update_max_uptime_record`` — memory, load average, and how long this run
+took to gather its data — see ``system_stats``) plus a deployment marker
+(commit sha8 and date — see ``read_git_info``), so it's obvious which commit is
 actually live given the Pi auto-updates from ``main`` on a 10-minute timer
 (see ``deploy/pi/update.sh``).
 
@@ -28,6 +29,7 @@ frames) with no source-era filtering logic of its own.
 
 import argparse
 import html
+import json
 import math
 import os
 import re
@@ -180,6 +182,49 @@ def _run_git_log(repo_dir):
         text=True,
         check=True,
     ).stdout
+
+
+def read_max_uptime_record(path):
+    """Read the persisted max-uptime record: ``{"uptime_seconds", "start", "end"}``.
+
+    None if ``path`` is falsy, missing, or unparseable.
+    """
+    if not path:
+        return None
+    path = Path(path)
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def update_max_uptime_record(path, uptime_seconds, now):
+    """Update the persisted longest-uptime-streak record if this run's uptime
+    is a new record; return the record (updated or unchanged) as ``{"uptime_seconds",
+    "start", "end"}`` with ``start``/``end`` as ISO timestamps.
+
+    ``start`` is this streak's boot time (``now`` minus uptime), recomputed each
+    qualifying run rather than carried over, since it should land on the same
+    moment every time (modulo clock drift) for as long as this is the same
+    continuous streak. ``end`` rolls forward to ``now`` on every run that's
+    still within the record streak, so it reads as "still ongoing" until a
+    reboot ends it and the record freezes at its last value. None if ``path``
+    or ``uptime_seconds`` is falsy (e.g. off-Linux, where uptime isn't readable).
+    """
+    if not path or uptime_seconds is None:
+        return None
+    record = read_max_uptime_record(path)
+    if record and record.get("uptime_seconds", 0) >= uptime_seconds:
+        return record
+    record = {
+        "uptime_seconds": uptime_seconds,
+        "start": (now - timedelta(seconds=uptime_seconds)).isoformat(),
+        "end": now.isoformat(),
+    }
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record))
+    return record
 
 
 def ensure_archive_link(www_dir, archive_dir):
@@ -881,9 +926,9 @@ def _history_modal_html(cam):
 
 
 def _footer_html(system):
-    """Render the footer: one host stat per line (uptime, memory, load
-    average, page generation time), then a deployment marker (commit sha8
-    and date) on its own line after.
+    """Render the footer: one host stat per line (uptime, longest recorded
+    uptime streak, memory, load average, page generation time), then a
+    deployment marker (commit sha8 and date) on its own line after.
 
     Each stat/marker is included only if its underlying read succeeded (see
     ``system_stats`` / ``read_git_info``), so the footer degrades gracefully
@@ -893,6 +938,14 @@ def _footer_html(system):
     lines = []
     if system.get("uptime_seconds") is not None:
         lines.append(f'Uptime {html.escape(_human_uptime(system["uptime_seconds"]))}')
+    max_uptime = system.get("max_uptime")
+    if max_uptime:
+        start = datetime.fromisoformat(max_uptime["start"]).strftime("%Y-%m-%d")
+        end = datetime.fromisoformat(max_uptime["end"]).strftime("%Y-%m-%d")
+        lines.append(
+            f'Longest uptime {html.escape(_human_uptime(max_uptime["uptime_seconds"]))} '
+            f"&middot; {html.escape(start)} &rarr; {html.escape(end)}"
+        )
     memory = system.get("memory")
     if memory:
         used_kb = memory["total_kb"] - memory["available_kb"]
@@ -1044,6 +1097,8 @@ def main():
     )
     system = system_stats()
     system["git"] = read_git_info()
+    max_uptime_path = config.get("max_uptime_log")
+    system["max_uptime"] = update_max_uptime_record(max_uptime_path, system["uptime_seconds"], now)
     # Covers the archive scan, capture log, /proc reads, and git subprocess —
     # the I/O-bound work — not render_html's pure-string HTML assembly below.
     system["generate_seconds"] = time.perf_counter() - generate_start
