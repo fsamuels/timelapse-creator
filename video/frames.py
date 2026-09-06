@@ -16,6 +16,7 @@ Everything downstream (filtering, duration computation) works on a single
 """
 
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from PIL import Image, ImageStat
 
 from capture.archive import frame_hash, parse_frame_time
 from normalize.align import MANIFEST_FILENAME
+
+log = logging.getLogger("video.frames")
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
@@ -81,19 +84,49 @@ def mean_brightness(path):
         return ImageStat.Stat(image.convert("L")).mean[0]
 
 
+def _readable_frames(frame_list):
+    """frame_list with any frame that fails to decode dropped and logged.
+
+    A corrupt/truncated frame (e.g. a capture-time glitch that made it into
+    the raw archive -- this project never drops frames at capture time) must
+    not abort an entire video build; skip it here instead, at build time.
+    """
+    kept = []
+    for path, ts in frame_list:
+        try:
+            mean_brightness(path)
+        except OSError as exc:
+            log.warning("skipping unreadable frame %s: %s", path, exc)
+            continue
+        kept.append((path, ts))
+    return kept
+
+
 def drop_dark_frames(frame_list, threshold):
     """Drop frames whose mean brightness (0-255 grayscale) is below
     threshold -- e.g. night frames on an otherwise-lit webcam.
+
+    Frames that fail to decode (corrupt/truncated) are skipped and logged
+    rather than raising.
     """
-    return [(path, ts) for path, ts in frame_list if mean_brightness(path) >= threshold]
+    return [
+        (path, ts)
+        for path, ts in _readable_frames(frame_list)
+        if mean_brightness(path) >= threshold
+    ]
 
 
 def drop_bright_frames(frame_list, threshold):
     """Drop frames whose mean brightness (0-255 grayscale) is at or above
     threshold -- the inverse of drop_dark_frames, for a night-only (sunset
     to sunrise) timelapse.
+
+    Frames that fail to decode (corrupt/truncated) are skipped and logged
+    rather than raising.
     """
-    return [(path, ts) for path, ts in frame_list if mean_brightness(path) < threshold]
+    return [
+        (path, ts) for path, ts in _readable_frames(frame_list) if mean_brightness(path) < threshold
+    ]
 
 
 def drop_duplicate_frames(frame_list):
