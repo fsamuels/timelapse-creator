@@ -152,8 +152,10 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   `--min-hold`/`--max-hold` so no single gap dominates; right for irregularly-spaced batches
   like drone photos, where some weeks have several flights and others have one). Optional
   `--from`/`--to` date filtering, `--drop-dark` (mean-brightness threshold) and `--dedupe`
-  (drop residual exact-duplicate frames) filters. Two build-time-only, opt-in enhancements
-  (see `docs/design.md` Component 5):
+  (drop residual exact-duplicate frames) filters. A frame that fails to decode (corrupt or
+  truncated — a capture-time glitch, since frames are never dropped at capture time) is
+  skipped with a logged warning rather than aborting the whole build. Two build-time-only,
+  opt-in enhancements (see `docs/design.md` Component 5):
   - `--label-date`/`--label-filename` — burns the capture date and/or source filename into
     the bottom-left corner of each frame, for QA while dialing in alignment/color settings;
     not meant to stay in a final render.

@@ -246,6 +246,11 @@ Pipeline:
    - Subsampling (e.g. "one frame per day at noon" for a season-long video) is **not
      implemented** — a natural addition to `frames.py` when a season-long preset is built,
      not needed for the on-demand case this first pass targets.
+   - A frame that fails to decode (corrupt/truncated — a capture-time glitch that made it
+     into the raw archive, since this project never drops frames at capture time) is skipped
+     with a logged warning rather than aborting the whole build. Applies wherever brightness
+     is checked (`--drop-dark`/`--keep-dark`), since that's the one place `frames.py` has to
+     actually open every image.
 3. **Time** each frame, one of two modes:
    - **Uniform** (`--fps`, default 24): every frame gets equal screen time, `1/fps` seconds.
      The right mode for the webcams' fixed 15-minute cadence.
