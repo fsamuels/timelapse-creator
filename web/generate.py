@@ -561,29 +561,43 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
         cam_views = []
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
-            scan = scan_cam(frames, today)
-            bytes_today += scan["bytes_today"]
-            counts = scan["daily_counts"]
             health = cam_health(frames, outcomes.get(cam), now, stale_after_for(cam_cfg))
             cam_count += 1
             if health["is_stale"]:
                 stale_count += 1
+            base_view = {
+                "name": cam,
+                "display_name": (cam_cfg or {}).get("display_name"),
+                "key": f"{_slug(site)}--{_slug(cam)}",
+                "url": (cam_cfg or {}).get("url"),
+                "interval_minutes": (cam_cfg or {}).get("interval_minutes"),
+                "health": health,
+                "thumb_url": thumb_url(frames, archive_dir),
+            }
+            if (cam_cfg or {}).get("stats_disabled"):
+                # Temporary performance escape hatch (see docs/open-questions.md):
+                # scan_cam's stat()-per-frame pass still scales with total
+                # archive size even after being reduced to one pass, so for
+                # cams where that isn't worth the Pi's CPU/disk-I/O budget
+                # right now, skip it entirely rather than compute and discard
+                # it. These cams' bytes are excluded from the burn-rate/runway
+                # estimate below, same as if they had zero frames.
+                cam_views.append({**base_view, "stats_disabled": True})
+                continue
+            scan = scan_cam(frames, today)
+            bytes_today += scan["bytes_today"]
+            counts = scan["daily_counts"]
             cam_bytes = scan["total_bytes"]
             full_grid = heatmap_grid(counts, today)
             cam_views.append(
                 {
-                    "name": cam,
-                    "display_name": (cam_cfg or {}).get("display_name"),
-                    "key": f"{_slug(site)}--{_slug(cam)}",
-                    "url": (cam_cfg or {}).get("url"),
-                    "interval_minutes": (cam_cfg or {}).get("interval_minutes"),
-                    "health": health,
+                    **base_view,
+                    "stats_disabled": False,
                     "recent": recent_strip(counts, today),
                     "full_grid": full_grid,
                     "day_details": day_details_for_grid(scan["hourly_counts"], full_grid),
                     "bytes": cam_bytes,
                     "avg_bytes": cam_bytes / len(frames) if frames else 0,
-                    "thumb_url": thumb_url(frames, archive_dir),
                 }
             )
         site_stale = sum(1 for c in cam_views if c["health"]["is_stale"])
@@ -703,6 +717,7 @@ a{{text-decoration:none}}
 .cam-status.stale{{color:#2a1a0e;background:#f5a524}}
 .cam-status.live{{color:#0a2e12;background:#3fb950}}
 .cam-body{{padding:12px 14px 14px}}
+.cam-stats-disabled{{font:400 10.5px {_FONT_STACK};color:rgba(255,255,255,.35)}}
 .cam-meta{{display:flex;gap:14px;flex-wrap:wrap;font:400 10.5px {_FONT_STACK};
   color:rgba(255,255,255,.7)}}
 .cam-heatmap-row{{display:flex;align-items:center;justify-content:space-between;
@@ -920,24 +935,25 @@ def _cam_card_html(cam, now):
         "</div></div>"
     )
 
-    meta = (
-        '<div class="cam-meta">'
-        f'<span>{html.escape(_human_bytes(cam["avg_bytes"]))} avg</span>'
-        f'<span>{health["frame_count"]} frames</span>'
-        f'<span>{html.escape(_human_bytes(cam["bytes"]))} disk</span>'
-        "</div>"
-    )
-    heatmap_row = (
-        '<div class="cam-heatmap-row">'
-        f'{_recent_strip_html(cam["recent"])}'
-        f'<a class="history-btn" href="#history-{key}">full history &rarr;</a>'
-        "</div>"
-    )
-    recent_info = '<div class="recent-info">Tap a day for details</div>'
-    return (
-        f'<div class="cam-card">{photo}'
-        f'<div class="cam-body">{meta}{heatmap_row}{recent_info}</div></div>'
-    )
+    if cam.get("stats_disabled"):
+        body = '<div class="cam-stats-disabled">Stats disabled for this camera</div>'
+    else:
+        meta = (
+            '<div class="cam-meta">'
+            f'<span>{html.escape(_human_bytes(cam["avg_bytes"]))} avg</span>'
+            f'<span>{health["frame_count"]} frames</span>'
+            f'<span>{html.escape(_human_bytes(cam["bytes"]))} disk</span>'
+            "</div>"
+        )
+        heatmap_row = (
+            '<div class="cam-heatmap-row">'
+            f'{_recent_strip_html(cam["recent"])}'
+            f'<a class="history-btn" href="#history-{key}">full history &rarr;</a>'
+            "</div>"
+        )
+        recent_info = '<div class="recent-info">Tap a day for details</div>'
+        body = f"{meta}{heatmap_row}{recent_info}"
+    return f'<div class="cam-card">{photo}<div class="cam-body">{body}</div></div>'
 
 
 def _history_modal_html(cam):
@@ -1086,7 +1102,8 @@ def render_html(page_data, now, show_stale_banner=False, system=None):
         parts.append('</div><div class="cams">')
         for cam in site["cams"]:
             parts.append(_cam_card_html(cam, now))
-            modals.append(_history_modal_html(cam))
+            if not cam.get("stats_disabled"):
+                modals.append(_history_modal_html(cam))
         parts.append("</div></div>")
 
     if system:
