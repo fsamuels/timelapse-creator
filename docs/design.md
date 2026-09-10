@@ -387,6 +387,20 @@ downloaded per day.
   `_level()` bucketing, now a simple off/low/high (3-color) scale rather than the old
   5-color one — visually quieter, matching the reference's intent for the strip to read as
   secondary information, not a primary alert.
+- **Per-cam scan cache (2026-09):** `scan_cam`'s per-run cost (a `stat()` and filename-parse
+  of every frame a cam has ever captured) scales with total archive size, which on the Pi
+  Zero W eventually made regenerations slow enough to look like a hang — `stats_disabled`
+  was the stopgap, skipping the scan for most cams entirely. `scan_cam_cached` replaces that
+  cost: a small JSON cache (`.scan_cache.json`, one per cam) persists the running
+  totals/day/hour aggregates plus the last frame folded in, stored inside the cam's own
+  archive directory (travels with the frames, not tracked in git). Each run only needs to
+  find and `stat()` frames newer than that cached marker (frame filenames are
+  timestamp-sortable — see `capture/archive.py` — so this is a `bisect` over the in-memory
+  frame list, not a rescan). If the cached marker can't be located in the current frame list
+  (corrupt cache, or the archive changed under it) the cache is discarded and rebuilt from a
+  full scan rather than trusted in an inconsistent state. `stats_disabled` stays in the code
+  as a manual escape hatch (e.g. for a cam's very first cache build over years of legacy
+  frames) but is no longer set on any cam by default.
 - **Health/status:** last frame per cam, how long ago, and a staleness flag drive the
   `LIVE`/`STALE` pill and card border. Each cam's stale threshold is `STALE_MULTIPLIER` (2)
   × its own configured `interval_minutes` — not a single global cutoff — since cams can run
