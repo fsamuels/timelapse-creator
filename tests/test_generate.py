@@ -366,6 +366,40 @@ def test_build_page_data_orphaned_cam_is_stale_without_crashing(tmp_path):
     assert summit["health"]["is_stale"] is True
 
 
+def test_build_page_data_stats_disabled_cam_skips_scan_but_keeps_health(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800", data=b"abc")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={"summit": {"interval_minutes": 15, "stats_disabled": True}},
+    )
+
+    summit = data["sites"][0]["cams"][0]
+    assert summit["stats_disabled"] is True
+    assert summit["health"]["is_stale"] is False
+    assert summit["health"]["frame_count"] == 1
+    assert "bytes" not in summit
+    assert "recent" not in summit
+    assert "full_grid" not in summit
+
+
+def test_build_page_data_stats_disabled_cam_excluded_from_burn_rate(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T06-00-00-000000-0800", data=b"x" * 100)
+    now = datetime(2026, 7, 16, 12, 0, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={"summit": {"interval_minutes": 15, "stats_disabled": True}},
+    )
+
+    assert data["burn_rate"]["bytes_today"] == 0
+
+
 def test_build_page_data_includes_interval_minutes(tmp_path):
     _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
     now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
@@ -811,6 +845,24 @@ def test_render_html_history_button_links_to_the_cams_modal(tmp_path):
     assert f'href="#history-{key}"' in doc
     assert f'id="history-{key}"' in doc
     assert "summit &middot; full history" in doc
+
+
+def test_render_html_stats_disabled_cam_shows_message_and_no_history_link(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path,
+        None,
+        now,
+        cam_config={"summit": {"interval_minutes": 15, "stats_disabled": True}},
+    )
+    doc = generate.render_html(data, now)
+
+    key = data["sites"][0]["cams"][0]["key"]
+    assert "Stats disabled for this camera" in doc
+    assert f'href="#history-{key}"' not in doc
+    assert f'id="history-{key}"' not in doc
 
 
 def test_render_html_shows_disk_usage_and_archive_link(tmp_path):

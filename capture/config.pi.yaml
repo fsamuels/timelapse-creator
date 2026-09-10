@@ -34,6 +34,14 @@
 # load climbs.
 # A new oregon site adds spout-springs-east (ODOT TripCheck image, OR 204 at
 # Spout Springs, East-facing), every 15 min.
+#
+# stats_disabled (web/generate.py): temporary performance fix for the Pi
+# Zero W's status-page regenerations getting slower as the archive grows
+# (see docs/open-questions.md) — skips the per-cam byte/heatmap scan (a
+# stat() on every frame that cam has ever captured) and shows a "stats
+# disabled" message on its card instead. Set on every cam except base while
+# the real fix (a scanning cache instead of a full rescan every 15 min) is
+# still open; revisit once that lands.
 
 archive_dir: /var/lib/timelapse/archive
 capture_log: /var/lib/timelapse/capture.log
@@ -51,31 +59,37 @@ cams:
     type: image
     url: "https://cdn.tegna-media.com/king/weather/columbia.jpg"
     interval_minutes: 15
+    stats_disabled: true
   queenanne:
     site: seattle
     type: image
     url: "https://cdn.tegna-media.com/king/weather/queenanne.jpg"
     interval_minutes: 15
+    stats_disabled: true
   sea-tac:
     site: seattle
     type: image
     url: "https://cdn.tegna-media.com/king/weather/seatac.jpg"
     interval_minutes: 15
+    stats_disabled: true
   mount-rainier:
     site: washington  # not Seattle-specific; grouped with other WA-wide cams
     type: image
     url: "https://www.nps.gov/webcams-mora/mountain.jpg"
     interval_minutes: 15
+    stats_disabled: true
   kalaloch-lodge:
     site: washington
     type: image
     url: "https://cs1.pixelcaster.com/dnc-kalaloch/kalaloch.jpg"
     interval_minutes: 15
+    stats_disabled: true
   summit:
     site: bluewood
     type: image
     url: "https://cameraftpapi.drivehq.com/api/Camera/LastImageaspx/shareID17403860/bwdsummit.jpg?"
     interval_minutes: 15
+    stats_disabled: true
   base:
     site: bluewood
     type: image
@@ -91,6 +105,7 @@ cams:
     type: image
     url: "https://wlos.com/resources/ftptransfer/wlos/maps/Cam%20UNCA%20EcoNet.png"
     interval_minutes: 60
+    stats_disabled: true
   # nantahala-outdoor-center:
   #   site: north-carolina
   #   type: image
@@ -102,15 +117,18 @@ cams:
     display_name: "OR 204 at Spout Springs (East)"
     url: "https://tripcheck.com/roadcams/cams/ORE204%20at%20Spout%20Springs_pid4503.jpg?0.965634209484643"
     interval_minutes: 15
+    stats_disabled: true
   cfht:
     site: hawaii
     type: youtube
     display_name: "Canada-France-Hawaii Telescope"
     url: "https://www.youtube.com/watch?v=MPokOMJvZ-g"
     interval_minutes: 15
+    stats_disabled: true
   subaru-telescope:
     site: hawaii
     type: youtube
     display_name: "Subaru Telescope"
     url: "https://www.youtube.com/watch?v=6g4Fh8K-MhY"
     interval_minutes: 15
+    stats_disabled: true
