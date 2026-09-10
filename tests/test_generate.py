@@ -982,11 +982,11 @@ def test_system_stats_load_avg_unavailable_is_none(tmp_path):
 def test_read_git_info_parses_sha8_and_commit_date():
     def fake_run(repo_dir):
         assert repo_dir == "some/repo"
-        return "a1b2c3d4\t2026-07-29\n"
+        return "a1b2c3d4\t2026-07-29 14:32\n"
 
     info = generate.read_git_info(repo_dir="some/repo", run_fn=fake_run)
 
-    assert info == {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"}
+    assert info == {"sha8": "a1b2c3d4", "commit_date": "2026-07-29 14:32"}
 
 
 def test_read_git_info_not_a_repo_is_none():
@@ -1008,11 +1008,11 @@ def test_render_html_footer_shows_deployed_sha8_and_commit_date(tmp_path):
     now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
 
     data = generate.build_page_data(tmp_path, None, now)
-    system = {"git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"}}
+    system = {"git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29 14:32"}}
     doc = generate.render_html(data, now, system=system)
 
     assert '<div class="footer">' in doc
-    assert "Deployed a1b2c3d4 &middot; 2026-07-29" in doc
+    assert "Deployed a1b2c3d4 &middot; 2026-07-29 14:32" in doc
 
 
 def test_human_uptime_days_and_hours():
@@ -1055,7 +1055,7 @@ def test_render_html_footer_puts_each_stat_on_its_own_line(tmp_path):
         "memory": {"total_kb": 1000000, "available_kb": 400000},
         "load_avg": (0.15, 0.09, 0.05),
         "generate_seconds": 0.35,
-        "git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29"},
+        "git": {"sha8": "a1b2c3d4", "commit_date": "2026-07-29 14:32"},
     }
     doc = generate.render_html(data, now, system=system)
 
@@ -1065,7 +1065,7 @@ def test_render_html_footer_puts_each_stat_on_its_own_line(tmp_path):
         "Mem 585.9 MB / 976.6 MB (60%)",
         "Load 0.15, 0.09, 0.05",
         "Generated in 350ms",
-        "Deployed a1b2c3d4 &middot; 2026-07-29",
+        "Deployed a1b2c3d4 &middot; 2026-07-29 14:32",
     ]
 
 
