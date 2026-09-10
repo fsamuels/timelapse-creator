@@ -183,6 +183,35 @@ def test_bytes_captured_on_filters_by_date(tmp_path):
     assert generate.bytes_captured_on(frames, date(2026, 7, 16)) == 3
 
 
+def test_scan_cam_computes_all_aggregates_in_one_pass(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T15-00-00-000000-0800", data=b"de"),
+        _write_frame(tmp_path, "s", "c", "2026-07-15T09-00-00-000000-0800", data=b"f"),
+    ]
+
+    scan = generate.scan_cam(frames, today=date(2026, 7, 16))
+
+    assert scan["daily_counts"] == {date(2026, 7, 16): 2, date(2026, 7, 15): 1}
+    assert scan["hourly_counts"] == {
+        date(2026, 7, 16): {12: 1, 15: 1},
+        date(2026, 7, 15): {9: 1},
+    }
+    assert scan["total_bytes"] == 6
+    assert scan["bytes_today"] == 5
+
+
+def test_scan_cam_empty_frames(tmp_path):
+    scan = generate.scan_cam([], today=date(2026, 7, 16))
+
+    assert scan == {
+        "daily_counts": {},
+        "hourly_counts": {},
+        "total_bytes": 0,
+        "bytes_today": 0,
+    }
+
+
 def test_daily_burn_rate_projects_a_full_day_from_the_rate_so_far():
     now = datetime(2026, 7, 16, 6, 0, tzinfo=PACIFIC)  # 6 hrs into the day
 

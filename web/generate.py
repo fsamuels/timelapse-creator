@@ -28,6 +28,7 @@ frames) with no source-era filtering logic of its own.
 """
 
 import argparse
+import fcntl
 import html
 import json
 import math
@@ -293,6 +294,41 @@ def hourly_counts(frames):
     return counts
 
 
+def scan_cam(frames, today):
+    """Single pass over one cam's whole frame history computing every
+    per-run aggregate that would otherwise need its own full scan: total
+    bytes, today's bytes, and daily/hourly frame counts.
+
+    Frames are archived forever (never deleted — see CLAUDE.md's "archive
+    everything raw" principle), so this list only grows, and this runs on
+    every 15-minute status-page regeneration. ``bytes_captured_on``,
+    ``daily_counts``, and ``hourly_counts`` each re-walk the same frames and
+    each re-parse every filename's timestamp; on the Pi Zero W this repeated
+    O(archive size) work (plus a ``stat()`` per frame) is the main driver of
+    generation time growing as the archive grows. This does it in one pass.
+    """
+    daily_counts = {}
+    hourly_counts = {}
+    total_bytes = 0
+    bytes_today = 0
+    for frame in frames:
+        t = parse_frame_time(frame)
+        day = t.date()
+        size = frame.stat().st_size
+        daily_counts[day] = daily_counts.get(day, 0) + 1
+        hourly_counts.setdefault(day, {})
+        hourly_counts[day][t.hour] = hourly_counts[day].get(t.hour, 0) + 1
+        total_bytes += size
+        if day == today:
+            bytes_today += size
+    return {
+        "daily_counts": daily_counts,
+        "hourly_counts": hourly_counts,
+        "total_bytes": total_bytes,
+        "bytes_today": bytes_today,
+    }
+
+
 def cam_health(frames, outcome, now, stale_after):
     """Summarize one cam's health for the status view."""
     last_time = parse_frame_time(frames[-1]) if frames else None
@@ -525,13 +561,14 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
         cam_views = []
         for cam, frames in cams.items():
             cam_cfg = cam_config.get(cam)
-            bytes_today += bytes_captured_on(frames, today)
-            counts = daily_counts(frames)
+            scan = scan_cam(frames, today)
+            bytes_today += scan["bytes_today"]
+            counts = scan["daily_counts"]
             health = cam_health(frames, outcomes.get(cam), now, stale_after_for(cam_cfg))
             cam_count += 1
             if health["is_stale"]:
                 stale_count += 1
-            cam_bytes = frame_bytes(frames)
+            cam_bytes = scan["total_bytes"]
             full_grid = heatmap_grid(counts, today)
             cam_views.append(
                 {
@@ -543,7 +580,7 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                     "health": health,
                     "recent": recent_strip(counts, today),
                     "full_grid": full_grid,
-                    "day_details": day_details_for_grid(hourly_counts(frames), full_grid),
+                    "day_details": day_details_for_grid(scan["hourly_counts"], full_grid),
                     "bytes": cam_bytes,
                     "avg_bytes": cam_bytes / len(frames) if frames else 0,
                     "thumb_url": thumb_url(frames, archive_dir),
@@ -1078,6 +1115,34 @@ def parse_args():
     return parser.parse_args()
 
 
+def acquire_generate_lock(output):
+    """Take a non-blocking exclusive lock scoped to ``output``'s directory.
+
+    Two things can trigger a regeneration close together on the Pi:
+    ``timelapse-capture.service``'s ``ExecStartPost`` (after every capture
+    run) and ``timelapse-update.service`` (after a ``git pull`` picks up new
+    commits, on its own 10-minute timer). Both invoke this module as a
+    separate process, so an in-process lock wouldn't help — if their timing
+    overlaps, two full archive scans would run at once on the Pi Zero W's
+    single core, competing for CPU and SD-card I/O badly enough to make the
+    whole box appear to hang.
+
+    Returns an open file handle holding the lock (close it, or let it be
+    garbage-collected, to release), or None if another run already holds it
+    — the caller should skip generating in that case rather than block,
+    since the page will just get regenerated on the next capture/update tick
+    anyway.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(output.parent / ".generate.lock", "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        return None
+    return lock_file
+
+
 def main():
     args = parse_args()
     config = yaml.safe_load(args.config.read_text())
@@ -1086,28 +1151,38 @@ def main():
     output = args.output or Path(config.get("web_output", DEFAULT_OUTPUT))
     show_stale_banner = config.get("web_show_stale_banner", False)
 
-    now = datetime.now(PACIFIC)
-    generate_start = time.perf_counter()
-    page_data = build_page_data(
-        archive_dir,
-        log_path,
-        now,
-        cam_config=config.get("cams"),
-        site_order=config.get("site_order"),
-    )
-    system = system_stats()
-    system["git"] = read_git_info()
-    max_uptime_path = config.get("max_uptime_log")
-    system["max_uptime"] = update_max_uptime_record(max_uptime_path, system["uptime_seconds"], now)
-    # Covers the archive scan, capture log, /proc reads, and git subprocess —
-    # the I/O-bound work — not render_html's pure-string HTML assembly below.
-    system["generate_seconds"] = time.perf_counter() - generate_start
-    html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner, system=system)
+    lock_file = acquire_generate_lock(output)
+    if lock_file is None:
+        print(f"another generate run holds the lock on {output.parent}, skipping")
+        return
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(html_doc)
-    ensure_archive_link(output.parent, archive_dir)
-    print(f"wrote {output} ({len(page_data['sites'])} site(s))")
+    try:
+        now = datetime.now(PACIFIC)
+        generate_start = time.perf_counter()
+        page_data = build_page_data(
+            archive_dir,
+            log_path,
+            now,
+            cam_config=config.get("cams"),
+            site_order=config.get("site_order"),
+        )
+        system = system_stats()
+        system["git"] = read_git_info()
+        max_uptime_path = config.get("max_uptime_log")
+        system["max_uptime"] = update_max_uptime_record(
+            max_uptime_path, system["uptime_seconds"], now
+        )
+        # Covers the archive scan, capture log, /proc reads, and git subprocess —
+        # the I/O-bound work — not render_html's pure-string HTML assembly below.
+        system["generate_seconds"] = time.perf_counter() - generate_start
+        html_doc = render_html(page_data, now, show_stale_banner=show_stale_banner, system=system)
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(html_doc)
+        ensure_archive_link(output.parent, archive_dir)
+        print(f"wrote {output} ({len(page_data['sites'])} site(s))")
+    finally:
+        lock_file.close()
 
 
 if __name__ == "__main__":
