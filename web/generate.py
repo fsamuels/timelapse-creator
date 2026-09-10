@@ -159,10 +159,12 @@ def system_stats(uptime_path="/proc/uptime", meminfo_path="/proc/meminfo", load_
 def read_git_info(repo_dir=REPO_DIR, run_fn=None):
     """``{"sha8", "commit_date"}`` for the running checkout's HEAD commit.
 
-    Used for the footer's deployment marker — the Pi auto-updates from ``main``
-    on a 10-minute timer (see ``deploy/pi/update.sh``), so knowing which commit
-    is actually live is otherwise a `git log` away. None if repo_dir isn't a
-    git checkout or git isn't installed; run_fn is injectable for tests.
+    ``commit_date`` includes the commit's time (not just the date) so the
+    footer's deployment marker can show when the live commit landed, not
+    just which day — the Pi auto-updates from ``main`` on a 10-minute timer
+    (see ``deploy/pi/update.sh``), so knowing which commit is actually live,
+    and how recently, is otherwise a `git log` away. None if repo_dir isn't
+    a git checkout or git isn't installed; run_fn is injectable for tests.
     """
     run_fn = run_fn or _run_git_log
     try:
@@ -177,7 +179,7 @@ def read_git_info(repo_dir=REPO_DIR, run_fn=None):
 
 def _run_git_log(repo_dir):
     return subprocess.run(
-        ["git", "log", "-1", "--format=%h\t%cs", "--abbrev=8"],
+        ["git", "log", "-1", "--format=%h\t%cd", "--date=format:%Y-%m-%d %H:%M", "--abbrev=8"],
         cwd=repo_dir,
         capture_output=True,
         text=True,
