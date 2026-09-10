@@ -212,6 +212,68 @@ def test_scan_cam_empty_frames(tmp_path):
     }
 
 
+def test_scan_cam_cached_matches_full_scan_on_first_run(tmp_path):
+    cam_dir = tmp_path / "s" / "c"
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T15-00-00-000000-0800", data=b"de"),
+        _write_frame(tmp_path, "s", "c", "2026-07-15T09-00-00-000000-0800", data=b"f"),
+    ]
+
+    scan = generate.scan_cam_cached(frames, cam_dir, today=date(2026, 7, 16))
+
+    assert scan == generate.scan_cam(frames, today=date(2026, 7, 16))
+    assert generate.scan_cache_path(cam_dir).exists()
+
+
+def test_scan_cam_cached_second_run_does_not_restat_old_frames(tmp_path):
+    cam_dir = tmp_path / "s" / "c"
+    frame1 = _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc")
+
+    generate.scan_cam_cached([frame1], cam_dir, today=date(2026, 7, 16))
+
+    # If frame1 were re-scanned, this would change its contribution to
+    # total_bytes from 3 to 100 — proving the cache actually skips it.
+    frame1.write_bytes(b"x" * 100)
+    frame2 = _write_frame(tmp_path, "s", "c", "2026-07-16T15-00-00-000000-0800", data=b"de")
+
+    scan = generate.scan_cam_cached([frame1, frame2], cam_dir, today=date(2026, 7, 16))
+
+    assert scan["total_bytes"] == 5  # cached 3 (stale) + 2 new, not 102
+    assert scan["daily_counts"] == {date(2026, 7, 16): 2}
+
+
+def test_scan_cam_cached_rebuilds_when_cached_frame_missing(tmp_path):
+    cam_dir = tmp_path / "s" / "c"
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T15-00-00-000000-0800", data=b"de"),
+    ]
+    generate.scan_cam_cached(frames, cam_dir, today=date(2026, 7, 16))
+
+    # Corrupt the cache: point it at a frame that isn't (or is no longer) in
+    # the archive, simulating a stale/mismatched cache.
+    cache_path = generate.scan_cache_path(cam_dir)
+    broken = generate.load_scan_cache(cache_path)
+    broken["last_frame"] = str(cam_dir / "nope.jpg")
+    generate.save_scan_cache(cache_path, broken)
+
+    scan = generate.scan_cam_cached(frames, cam_dir, today=date(2026, 7, 16))
+
+    assert scan == generate.scan_cam(frames, today=date(2026, 7, 16))
+
+
+def test_load_scan_cache_missing_file_returns_none(tmp_path):
+    assert generate.load_scan_cache(tmp_path / "nope.json") is None
+
+
+def test_load_scan_cache_corrupt_json_returns_none(tmp_path):
+    path = tmp_path / "cache.json"
+    path.write_text("not json")
+
+    assert generate.load_scan_cache(path) is None
+
+
 def test_daily_burn_rate_projects_a_full_day_from_the_rate_so_far():
     now = datetime(2026, 7, 16, 6, 0, tzinfo=PACIFIC)  # 6 hrs into the day
 

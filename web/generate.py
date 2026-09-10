@@ -28,6 +28,7 @@ frames) with no source-era filtering logic of its own.
 """
 
 import argparse
+import bisect
 import fcntl
 import html
 import json
@@ -37,7 +38,7 @@ import re
 import shutil
 import subprocess
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -297,17 +298,13 @@ def hourly_counts(frames):
 
 
 def scan_cam(frames, today):
-    """Single pass over one cam's whole frame history computing every
-    per-run aggregate that would otherwise need its own full scan: total
-    bytes, today's bytes, and daily/hourly frame counts.
+    """Single pass over ``frames`` computing every per-run aggregate that
+    would otherwise need its own full scan: total bytes, today's bytes, and
+    daily/hourly frame counts.
 
-    Frames are archived forever (never deleted — see CLAUDE.md's "archive
-    everything raw" principle), so this list only grows, and this runs on
-    every 15-minute status-page regeneration. ``bytes_captured_on``,
-    ``daily_counts``, and ``hourly_counts`` each re-walk the same frames and
-    each re-parse every filename's timestamp; on the Pi Zero W this repeated
-    O(archive size) work (plus a ``stat()`` per frame) is the main driver of
-    generation time growing as the archive grows. This does it in one pass.
+    A full O(len(frames)) scan (plus a ``stat()`` per frame) — see
+    ``scan_cam_cached`` for the cache that keeps this from re-running over a
+    cam's *entire* history on every regeneration.
     """
     daily_counts = {}
     hourly_counts = {}
@@ -328,6 +325,127 @@ def scan_cam(frames, today):
         "hourly_counts": hourly_counts,
         "total_bytes": total_bytes,
         "bytes_today": bytes_today,
+    }
+
+
+SCAN_CACHE_FILENAME = ".scan_cache.json"
+
+
+def scan_cache_path(cam_dir):
+    """Path to a cam's persisted scan cache.
+
+    Stored inside the cam's own archive directory (alongside its ``YYYY/MM``
+    frame folders) rather than a separate cache tree, so it travels with the
+    frames on rsync/backup and survives a fresh checkout of the repo (the
+    cache has nothing to do with git — ``archive/`` isn't tracked).
+    """
+    return Path(cam_dir) / SCAN_CACHE_FILENAME
+
+
+def _empty_scan_cache():
+    return {
+        "last_frame": None,
+        "total_bytes": 0,
+        "daily_counts": {},
+        "hourly_counts": {},
+        "bytes_by_day": {},
+    }
+
+
+def load_scan_cache(cache_path):
+    """Load a persisted scan cache; None if missing, corrupt, or malformed.
+
+    Callers treat None as "can't trust this, do a full rebuild" — see
+    ``scan_cam_cached``.
+    """
+    try:
+        raw = json.loads(Path(cache_path).read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    try:
+        return {
+            "last_frame": raw["last_frame"],
+            "total_bytes": raw["total_bytes"],
+            "daily_counts": {date.fromisoformat(d): c for d, c in raw["daily_counts"].items()},
+            "hourly_counts": {
+                date.fromisoformat(d): {int(h): c for h, c in hours.items()}
+                for d, hours in raw["hourly_counts"].items()
+            },
+            "bytes_by_day": {date.fromisoformat(d): b for d, b in raw["bytes_by_day"].items()},
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def save_scan_cache(cache_path, cache):
+    raw = {
+        "last_frame": cache["last_frame"],
+        "total_bytes": cache["total_bytes"],
+        "daily_counts": {d.isoformat(): c for d, c in cache["daily_counts"].items()},
+        "hourly_counts": {
+            d.isoformat(): {str(h): c for h, c in hours.items()}
+            for d, hours in cache["hourly_counts"].items()
+        },
+        "bytes_by_day": {d.isoformat(): b for d, b in cache["bytes_by_day"].items()},
+    }
+    Path(cache_path).write_text(json.dumps(raw))
+
+
+def _fold_frames_into_cache(cache, frames):
+    """Stat + parse each of ``frames`` (oldest-first) and fold it into
+    ``cache`` in place, advancing ``cache["last_frame"]`` to the last one.
+    """
+    for frame in frames:
+        t = parse_frame_time(frame)
+        day = t.date()
+        size = frame.stat().st_size
+        cache["daily_counts"][day] = cache["daily_counts"].get(day, 0) + 1
+        cache["hourly_counts"].setdefault(day, {})
+        cache["hourly_counts"][day][t.hour] = cache["hourly_counts"][day].get(t.hour, 0) + 1
+        cache["bytes_by_day"][day] = cache["bytes_by_day"].get(day, 0) + size
+        cache["total_bytes"] += size
+    if frames:
+        cache["last_frame"] = str(frames[-1])
+
+
+def scan_cam_cached(frames, cam_dir, today):
+    """Like ``scan_cam``, but backed by a persisted per-cam cache (see
+    ``scan_cache_path``) so a regeneration only stat()s/parses frames
+    captured since the last run, instead of re-walking the cam's entire
+    history every time — the O(archive size) cost ``scan_cam``'s docstring
+    describes, which is what made ``stats_disabled`` necessary in the first
+    place (see config comments / docs/open-questions.md).
+
+    ``frames`` must be sorted oldest-first, as ``scan_archive`` returns them
+    (frame filenames are timestamp-sortable — see ``capture/archive.py``).
+    The cache resumes from wherever its ``last_frame`` sits in that order.
+    If that frame can't be found in ``frames`` at all — cache corrupt, or
+    the archive changed under it (e.g. manual edit) — the cache is discarded
+    and rebuilt from a full scan rather than trusted in an inconsistent
+    state.
+    """
+    cache_path = scan_cache_path(cam_dir)
+    cache = load_scan_cache(cache_path)
+    frame_strs = [str(f) for f in frames]
+
+    if cache is not None and cache["last_frame"] is not None:
+        idx = bisect.bisect_right(frame_strs, cache["last_frame"])
+        if idx == 0 or frame_strs[idx - 1] != cache["last_frame"]:
+            cache = None  # cached frame missing from current archive -> rebuild
+    if cache is None:
+        cache = _empty_scan_cache()
+        new_frames = frames
+    else:
+        new_frames = frames[idx:]
+
+    _fold_frames_into_cache(cache, new_frames)
+    save_scan_cache(cache_path, cache)
+
+    return {
+        "daily_counts": cache["daily_counts"],
+        "hourly_counts": cache["hourly_counts"],
+        "total_bytes": cache["total_bytes"],
+        "bytes_today": cache["bytes_by_day"].get(today, 0),
     }
 
 
@@ -577,16 +695,16 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                 "thumb_url": thumb_url(frames, archive_dir),
             }
             if (cam_cfg or {}).get("stats_disabled"):
-                # Temporary performance escape hatch (see docs/open-questions.md):
-                # scan_cam's stat()-per-frame pass still scales with total
-                # archive size even after being reduced to one pass, so for
-                # cams where that isn't worth the Pi's CPU/disk-I/O budget
-                # right now, skip it entirely rather than compute and discard
-                # it. These cams' bytes are excluded from the burn-rate/runway
-                # estimate below, same as if they had zero frames.
+                # Manual override, not the normal path since scan_cam_cached
+                # exists: skips the per-cam scan entirely for a cam where even
+                # the cached incremental cost isn't worth the Pi's CPU/disk-I/O
+                # budget (e.g. a first cache build over years of legacy
+                # frames). These cams' bytes are excluded from the
+                # burn-rate/runway estimate below, same as if they had zero
+                # frames.
                 cam_views.append({**base_view, "stats_disabled": True})
                 continue
-            scan = scan_cam(frames, today)
+            scan = scan_cam_cached(frames, archive_dir / site / cam, today)
             bytes_today += scan["bytes_today"]
             counts = scan["daily_counts"]
             cam_bytes = scan["total_bytes"]
