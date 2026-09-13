@@ -63,9 +63,14 @@
   existing `fetch_stream_frame` (ffmpeg) exactly as `type: stream` does — `yt-dlp` is the only
   new piece, added as a dependency in `requirements.txt`, and `ffmpeg` itself is now a
   documented system dependency in `deploy/pi/README.md` rather than a currently-unused one.
-  `cfht`'s configured URL is a fixed watch URL (a long-running 24/7 stream); `subaru-
-  telescope`'s is a channel `/live` URL, since that channel's live video ID changes over
-  time. Both `interval_minutes: 15`, though this is a heavier per-fetch than a plain image GET
+  Both cams' feeds are hosted on the same third-party rebroadcast channel
+  (`youtube.com/@astroasahi`), which restarts each stream's video ID periodically, so both
+  `cfht` and `subaru-telescope` are pinned to a specific watch URL rather than a channel
+  `/live` URL — that was tried first for `subaru-telescope` but proved unreliable, resolving
+  to whichever of the channel's several concurrent streams it currently featured rather than
+  the actual Subaru feed. When a pinned ID goes stale (see `capture/config.pi.yaml`'s comment
+  for how to re-pin it), the cam reads as stuck/stale on the status page rather than failing
+  loudly. Both `interval_minutes: 15`, though this is a heavier per-fetch than a plain image GET
   (yt-dlp resolution + ffmpeg decode vs. one HTTP GET), worth revisiting if Pi CPU load
   becomes a problem. The Pi now captures ten cams total.
 

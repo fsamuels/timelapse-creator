@@ -22,13 +22,18 @@
 # A new hawaii site adds two Mauna Kea observatory cams, both `type: youtube`
 # (capture/fetch.py's fetch_youtube_frame — yt-dlp resolves the watch/channel
 # URL to a direct stream URL, then ffmpeg grabs one frame, same as `type:
-# stream`). cfht is a fixed watch URL (a long-running 24/7 stream); subaru-
-# telescope is also pinned to a specific watch URL — the channel's `/live`
-# URL was tried first but proved unreliable, resolving to whatever the
-# channel currently features (including archived/non-live videos from other
-# telescopes on the same channel) rather than an actual live Subaru feed. If
-# this video ID goes stale, re-check the channel for the current live Subaru
-# stream and update the pinned ID (see PR discussion 2026-08-06).
+# stream`). Both cfht and subaru-telescope are pinned to a specific watch URL
+# rather than a channel `/live` URL — that was tried first for subaru-telescope
+# but proved unreliable, resolving to whatever the channel currently features
+# (including archived/non-live videos from other telescopes on the same
+# channel) rather than an actual live Subaru feed. Both cams' feeds are hosted
+# on the same third-party rebroadcast channel (youtube.com/@astroasahi,
+# "Asahi Astro LIVE"), which restarts each watch/video ID periodically — when
+# a pinned ID goes stale (cam shows as stuck/stale on the status page,
+# yt-dlp errors "This live stream recording is not available"), re-check that
+# channel's Live tab for the current MaunaKea West (cfht) / MaunaKea East
+# (subaru-telescope) stream and update the pinned ID (see PR discussion
+# 2026-08-06; both IDs went stale and were re-pinned again 2026-09-13).
 # Heavier per-fetch than a plain image GET (yt-dlp resolution + ffmpeg
 # decode), so kept at every 15 min for now but worth revisiting if Pi CPU
 # load climbs.
@@ -116,11 +121,11 @@ cams:
     site: hawaii
     type: youtube
     display_name: "Canada-France-Hawaii Telescope"
-    url: "https://www.youtube.com/watch?v=MPokOMJvZ-g"
+    url: "https://www.youtube.com/watch?v=Q3UhCgsWDw8"
     interval_minutes: 15
   subaru-telescope:
     site: hawaii
     type: youtube
     display_name: "Subaru Telescope"
-    url: "https://www.youtube.com/watch?v=6g4Fh8K-MhY"
+    url: "https://www.youtube.com/watch?v=Kj5DjRYkzD8"
     interval_minutes: 15
