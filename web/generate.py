@@ -6,8 +6,11 @@ top, then per-cam cards grouped by site showing the last frame, a recent-activit
 strip, and a link to that cam's full multi-month history (a GitHub-style
 contribution grid, opened as a bottom-sheet "modal" whose interactivity — the
 open/close and the day-tap-for-detail behavior — is a mix of CSS ``:target``
-and small inline ``onclick`` attributes; there's no ``<script>`` tag, keeping
-the page dependency-free). Clicking a day with frames in that grid reveals an
+and small inline ``onclick`` attributes, keeping the page dependency-free.
+The one exception is a small inline ``<script>`` (see ``_LIVE_AGO_SCRIPT``)
+that keeps the header's "last updated" indicator live client-side, so a
+stale cached copy of the page is obvious rather than silently read as
+current. Clicking a day with frames in that grid reveals an
 hourly drill-down for just that day (see ``hourly_counts`` /
 ``day_details_for_grid``); days with no frames are skipped rather than given
 an empty sub-grid.
@@ -891,6 +894,34 @@ a{{text-decoration:none}}
   font:400 9px {_FONT_STACK};color:rgba(255,255,255,.3)}}
 .footer{{margin-top:28px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);
   font:400 12px {_FONT_STACK};color:rgba(255,255,255,.65);text-align:center;line-height:1.7}}
+.live-ago{{font-weight:700;color:#e8eaed}}
+"""
+
+# Computes elapsed time client-side from #live-ago's data-generated timestamp
+# rather than trusting the server-rendered "Generated ..." text, so a stale
+# cached copy of the page still reads correctly (see module docstring on the
+# Pi's 10-minute auto-update / capture cache). Mirrors _human_ago's buckets.
+_LIVE_AGO_SCRIPT = """
+(function(){
+  var el = document.getElementById('live-ago');
+  if (!el) return;
+  var generated = new Date(el.getAttribute('data-generated'));
+  function fmt(ms) {
+    var s = Math.floor(ms / 1000);
+    if (s < 90) return 'just now';
+    var m = Math.floor(s / 60);
+    if (m < 90) return m + ' min ago';
+    var h = Math.floor(m / 60);
+    if (h < 48) return h + ' hr ago';
+    var d = Math.floor(h / 24);
+    return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+  }
+  function update() {
+    el.textContent = fmt(Date.now() - generated.getTime());
+  }
+  update();
+  setInterval(update, 30000);
+})();
 """
 
 _WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
@@ -1164,7 +1195,9 @@ def render_html(page_data, now, show_stale_banner=False, system=None):
         f'<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">{_LOGO_SVG_BODY}</svg>'
         '<div class="title">Capture Status</div></div>'
         f'<div class="subtitle">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M"))} '
-        f'&middot; {html.escape(now.strftime("%Z"))}</div></div>'
+        f'&middot; {html.escape(now.strftime("%Z"))} &middot; '
+        f'<span class="live-ago" id="live-ago" data-generated="{html.escape(now.isoformat())}">'
+        "just now</span></div></div>"
         '<a class="archive-link" href="archive/">browse full archive &rarr;</a></div>',
     ]
 
@@ -1231,6 +1264,7 @@ def render_html(page_data, now, show_stale_banner=False, system=None):
 
     parts.append("</div></div>")  # .content, .wrap
     parts.extend(modals)
+    parts.append(f"<script>{_LIVE_AGO_SCRIPT}</script>")
     parts.append("</body></html>")
     return "\n".join(parts)
 
