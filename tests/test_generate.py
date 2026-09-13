@@ -707,7 +707,21 @@ def test_render_html_is_self_contained_and_shows_cams(tmp_path):
     assert doc.startswith("<!doctype html>")
     assert "bluewood" in doc and "summit" in doc
     assert "http" not in doc.split("<style>")[1].split("</style>")[0]  # no external assets
-    assert "<script" not in doc  # interactivity (the history modal) is pure CSS :target
+    # The history modal's own interactivity is pure CSS :target / inline onclick;
+    # the one <script> tag is the header's client-side "last updated" indicator.
+    assert doc.count("<script") == 1
+
+
+def test_render_html_shows_a_live_last_updated_indicator(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 30, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    assert 'id="live-ago"' in doc
+    assert f'data-generated="{now.isoformat()}"' in doc
+    assert "getElementById('live-ago')" in doc
 
 
 def test_render_html_shows_a_thumbnail_of_the_newest_frame(tmp_path):
