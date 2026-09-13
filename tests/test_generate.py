@@ -165,6 +165,79 @@ def test_recent_strip_ignores_activity_outside_its_window():
     assert cells[-1]["level"] == 2  # scoped peak is just today's 1 frame
 
 
+def test_recent_frames_keeps_only_the_last_24h_oldest_to_newest(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-15T10-00-00-000000-0800"),  # >24h old
+        _write_frame(tmp_path, "s", "c", "2026-07-16T09-00-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800"),
+    ]
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    recent = generate.recent_frames(frames, now)
+
+    assert recent == frames[1:]
+
+
+def test_recent_frames_empty_when_nothing_in_window():
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+    assert generate.recent_frames([], now) == []
+
+
+def test_gallery_frame_url_is_relative_to_the_gallery_dir(tmp_path):
+    frame = _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+
+    url = generate._gallery_frame_url(frame, tmp_path)
+
+    assert url == "../archive/bluewood/summit/2026/07/2026-07-16T12-00-00-000000-0800.jpg"
+
+
+def test_gallery_page_html_lists_frames_newest_first(tmp_path):
+    frames = [
+        _write_frame(tmp_path, "s", "c", "2026-07-16T09-00-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800"),
+    ]
+    cam = {"name": "summit", "key": "s--c", "recent_frames": frames}
+
+    page = generate._gallery_page_html(cam, tmp_path)
+
+    first = page.index("2026-07-16T12-00-00")
+    second = page.index("2026-07-16T09-00-00")
+    assert first < second  # newest frame's <img> appears before the older one
+    assert "past 24h" in page
+
+
+def test_gallery_page_html_empty_state(tmp_path):
+    cam = {"name": "summit", "key": "s--c", "recent_frames": []}
+
+    page = generate._gallery_page_html(cam, tmp_path)
+
+    assert "No frames captured in the last 24 hours" in page
+
+
+def test_build_page_data_includes_recent_frames(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+
+    assert len(data["sites"][0]["cams"][0]["recent_frames"]) == 1
+
+
+def test_render_html_links_to_the_cams_gallery_page(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T12-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
+    data = generate.build_page_data(
+        tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
+    )
+
+    page = generate.render_html(data, now)
+
+    key = data["sites"][0]["cams"][0]["key"]
+    assert f'href="gallery/{key}.html"' in page
+
+
 def test_frame_bytes_sums_file_sizes(tmp_path):
     frames = [
         _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800", data=b"abc"),

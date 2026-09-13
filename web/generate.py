@@ -15,6 +15,11 @@ hourly drill-down for just that day (see ``hourly_counts`` /
 ``day_details_for_grid``); days with no frames are skipped rather than given
 an empty sub-grid.
 
+Each cam card also links to a separate ``gallery/<cam-key>.html`` page (see
+``_gallery_page_html``) showing that cam's last 24 hours as a newest-first
+thumbnail grid — a real per-frame page rather than another ``:target`` modal,
+so the main page's size stays independent of how many recent frames exist.
+
 Also symlinks the raw archive in next to the page (see ``ensure_archive_link``)
 so it's directly browsable, reports per-cam and total disk usage, and shows a
 footer of host stats (uptime, longest recorded uptime streak — see
@@ -562,6 +567,24 @@ def recent_strip(counts, end_date, days=RECENT_DAYS, levels=HEATMAP_LEVELS):
     return cells
 
 
+def recent_frames(frames, now, hours=24):
+    """Frames captured in the last ``hours``, oldest-first.
+
+    ``frames`` must be sorted oldest-first (as ``scan_archive`` returns them).
+    Walks back from the newest frame rather than scanning/bisecting the whole
+    history, so the cost is proportional to how many frames actually fall in
+    the window, not the cam's total archive size.
+    """
+    cutoff = now - timedelta(hours=hours)
+    recent = []
+    for frame in reversed(frames):
+        if parse_frame_time(frame) < cutoff:
+            break
+        recent.append(frame)
+    recent.reverse()
+    return recent
+
+
 def _human_bytes(n):
     """Render a byte count like '482 KB' or '1.3 GB'."""
     size = float(n)
@@ -717,6 +740,7 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                     **base_view,
                     "stats_disabled": False,
                     "recent": recent_strip(counts, today),
+                    "recent_frames": recent_frames(frames, now),
                     "full_grid": full_grid,
                     "day_details": day_details_for_grid(scan["hourly_counts"], full_grid),
                     "bytes": cam_bytes,
@@ -1100,6 +1124,7 @@ def _cam_card_html(cam, now):
             '<div class="cam-heatmap-row">'
             f'{_recent_strip_html(cam["recent"])}'
             f'<a class="history-btn" href="#history-{key}">full history &rarr;</a>'
+            f'<a class="history-btn" href="gallery/{key}.html">past 24h &rarr;</a>'
             "</div>"
         )
         recent_info = '<div class="recent-info">Tap a day for details</div>'
@@ -1126,6 +1151,70 @@ def _history_modal_html(cam):
         '<div class="modal-hint">Tap a day for details</div>'
         f"{day_details}"
         "</div></div>"
+    )
+
+
+_GALLERY_STYLE = f"""
+*{{box-sizing:border-box}}
+body{{margin:0;background:#0b0d10;font-family:{_FONT_STACK};
+  -webkit-font-smoothing:antialiased}}
+a{{text-decoration:none}}
+.wrap{{min-height:100vh;background:#0b0d10;display:flex;justify-content:center}}
+.content{{width:100%;max-width:900px;padding:22px 18px 60px}}
+.back-link{{font:500 11px {_FONT_STACK};color:#7dd3fc}}
+.title{{font:700 18px {_FONT_STACK};color:#e8eaed;margin-top:14px;letter-spacing:-.02em}}
+.gallery-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+  gap:10px;margin-top:18px}}
+.gallery-cell{{display:block;border-radius:8px;overflow:hidden;
+  background:rgba(255,255,255,.04)}}
+.gallery-cell img{{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}}
+.gallery-ts{{display:block;padding:5px 7px;font:400 10px {_FONT_STACK};
+  color:rgba(255,255,255,.6)}}
+.gallery-empty{{margin-top:18px;font:400 12px {_FONT_STACK};color:rgba(255,255,255,.4)}}
+"""
+
+
+def _gallery_frame_url(frame, archive_dir):
+    """URL for one archived frame, relative to a page in the ``gallery/`` dir."""
+    return f"../archive/{Path(frame).relative_to(archive_dir).as_posix()}"
+
+
+def _gallery_page_html(cam, archive_dir, index_href="../index.html"):
+    """Standalone page: a cam's last-24h frames as a newest-first thumbnail grid.
+
+    A separate file per cam (see ``main``) rather than folded into the main
+    status page's history modal — unlike the heatmap grid's colored cells,
+    this embeds a real thumbnail per frame, and the main page is regenerated
+    and re-fetched every capture cycle, so keeping it out of that page keeps
+    that cost independent of how many cams/frames exist.
+    """
+    name_html = html.escape(cam["name"])
+    frames = list(reversed(cam.get("recent_frames", [])))
+    if frames:
+        cells = "".join(
+            '<a class="gallery-cell" href="{url}" target="_blank" rel="noopener">'
+            '<img src="{url}" alt="{name} frame at {ts}" loading="lazy">'
+            '<span class="gallery-ts">{ts}</span></a>'.format(
+                url=_gallery_frame_url(frame, archive_dir),
+                name=name_html,
+                ts=html.escape(parse_frame_time(frame).strftime("%Y-%m-%d %H:%M")),
+            )
+            for frame in frames
+        )
+        body = f'<div class="gallery-grid">{cells}</div>'
+    else:
+        body = '<p class="gallery-empty">No frames captured in the last 24 hours.</p>'
+    return (
+        "<!doctype html>"
+        '<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{name_html} &middot; past 24h</title>"
+        f"<style>{_GALLERY_STYLE}</style></head><body>"
+        '<div class="wrap"><div class="content">'
+        f'<a class="back-link" href="{html.escape(index_href)}">&larr; status</a>'
+        f'<div class="title">{name_html} &middot; past 24h</div>'
+        f"{body}"
+        "</div></div></body></html>"
     )
 
 
@@ -1351,7 +1440,22 @@ def main():
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(html_doc)
         ensure_archive_link(output.parent, archive_dir)
-        print(f"wrote {output} ({len(page_data['sites'])} site(s))")
+
+        gallery_dir = output.parent / "gallery"
+        gallery_dir.mkdir(exist_ok=True)
+        gallery_count = 0
+        for site in page_data["sites"]:
+            for cam in site["cams"]:
+                if cam.get("stats_disabled"):
+                    continue
+                page = _gallery_page_html(cam, Path(archive_dir), index_href=f"../{output.name}")
+                (gallery_dir / f'{cam["key"]}.html').write_text(page)
+                gallery_count += 1
+
+        print(
+            f"wrote {output} ({len(page_data['sites'])} site(s), "
+            f"{gallery_count} gallery page(s))"
+        )
     finally:
         lock_file.close()
 

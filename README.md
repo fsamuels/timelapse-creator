@@ -85,7 +85,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   plus a "full history" link opening a GitHub-style multi-month contribution grid per cam as
   a bottom-sheet — implemented with CSS `:target`, no `<script>` tag — from the archive
   filenames and the capture log; clicking a day with frames in that grid drills down further
-  into an hourly breakdown for just that day. Also symlinks the raw archive in next to the
+  into an hourly breakdown for just that day, and a "past 24h" link opening a separate
+  newest-first thumbnail-grid page (`gallery/<cam-key>.html`) of that cam's last 24 hours,
+  regenerated alongside the main page each run. Also symlinks the raw archive in next to the
   page so it's directly browsable, and a footer shows host stats (uptime, longest recorded
   uptime streak with its start/end dates, memory, load average), how long the page took to
   generate, and a deployment marker (commit sha8 + date) so it's clear which commit is

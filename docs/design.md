@@ -388,6 +388,18 @@ downloaded per day.
   frames get no sub-grid at all — nothing to show, and it keeps output size proportional to
   actual archive data rather than a fixed ~91-day cost per cam regardless of how sparse the
   archive is.
+- **24h gallery page (2026-09):** each cam card also links to `gallery/<cam-key>.html` via a
+  "past 24h →" link next to "full history →" — a newest-first thumbnail grid of that cam's
+  last 24 hours (`recent_frames()`, a simple walk back from the newest frame until it hits
+  one older than the cutoff). Rendered as a **separate static file per cam** rather than
+  folded into the existing `:target` history modal: the history modal's cells are just
+  colored `<div>`s, cheap regardless of how many are shown, but a 24h gallery embeds a real
+  `<img>` per frame — potentially 50-100+ per cam — and the main status page is already
+  refetched by every browser tab every 15 minutes (`<meta http-equiv="refresh">`), so keeping
+  those thumbnails out of it keeps that page's size independent of frame volume. Generated
+  alongside `index.html` on every run (same regenerate-on-capture model, no new triggers);
+  written into `gallery/` next to the page, imagery served through the existing `archive/`
+  symlink.
 - **Activity leveling:** both the 31-day strip and the full-history grid use the same
   `_level()` bucketing, now a simple off/low/high (3-color) scale rather than the old
   5-color one — visually quieter, matching the reference's intent for the strip to read as
