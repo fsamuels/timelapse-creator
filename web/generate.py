@@ -919,6 +919,8 @@ a{{text-decoration:none}}
 .footer{{margin-top:28px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);
   font:400 12px {_FONT_STACK};color:rgba(255,255,255,.65);text-align:center;line-height:1.7}}
 .live-ago{{font-weight:700;color:#e8eaed}}
+.live-ago.warn{{color:#f5a524}}
+.live-ago.stale{{color:#ff6b6b}}
 """
 
 # Computes elapsed time client-side from #live-ago's data-generated timestamp
@@ -941,7 +943,11 @@ _LIVE_AGO_SCRIPT = """
     return d + ' day' + (d === 1 ? '' : 's') + ' ago';
   }
   function update() {
-    el.textContent = fmt(Date.now() - generated.getTime());
+    var ms = Date.now() - generated.getTime();
+    el.textContent = fmt(ms);
+    var min = ms / 60000;
+    el.classList.toggle('stale', min >= 60);
+    el.classList.toggle('warn', min >= 15 && min < 60);
   }
   update();
   setInterval(update, 30000);
