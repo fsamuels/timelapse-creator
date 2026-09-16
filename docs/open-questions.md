@@ -397,3 +397,54 @@ status page's per-cam and total disk-usage figures (`web/generate.py`).
       Pi-only cams/sites and the `capture_log`/`web_output`/`site_order` keys into
       `config.yaml`, update `deploy/pi/` units and docs to point at it, then delete
       `config.pi.yaml`.
+
+## 13. Pi reliability: freezes/crashes (ongoing)
+
+The Pi has gone fully unresponsive (needing a manual power cycle) more than once. Each
+time this happened, we made an OS/network-level change directly on the Pi — these
+aren't in git (nothing in the app enforces them), so the actionable runbook lives in
+**`deploy/pi/README.md`**'s "Reliability hardening" section; this entry is the decision
+record for *why*.
+
+**Round 1 (before persistent logging existed, so no log evidence survived):** wifi
+power-saving was suspected as a cause of the Broadcom wifi chip going into a bad state,
+and persistent journal logging (`Storage=persistent`, previously the default in-memory
+ring buffer that's lost on an unclean reboot) was enabled specifically so a *next*
+freeze would leave evidence to diagnose. Both changes documented in
+`deploy/pi/README.md`.
+
+**Round 2 (2026-09-11, with persistent logging now in place):** froze again. With
+`journalctl -b -1` available this time, the previous boot's log showed:
+
+- ~11.75 hours of normal operation, then from ~07:17 onward NetworkManager repeatedly
+  failed to associate/reassociate to the `ReignCloudRanch` SSID (83 failures logged
+  over the boot) — the site's router broadcasts that SSID from **four different
+  BSSIDs** (multi-radio/mesh), and the client appeared to be churning against them.
+- The log simply stops mid-line at 07:20:04, right after a scheduled `git pull`
+  failed on DNS resolution (wifi was already degraded) — no shutdown sequence, no
+  kernel panic, no OOM, no thermal/undervoltage flag (`vcgencmd get_throttled` reads
+  `0x0`), no filesystem errors. This pattern (silent stop, no panic) plus the
+  concurrent wifi churn points at the wifi driver (`brcmfmac`/SDIO, Broadcom
+  BCM43430) wedging the kernel outright, a known failure mode for this chip under
+  heavy reassociation churn — not memory, power, or heat.
+- The Pi rebooted on its own ~47 seconds later. Raspberry Pi OS's default hardware
+  watchdog (armed automatically, not something we configured — see
+  `deploy/pi/README.md`) is one explanation, though a manual power-cycle by whoever
+  first noticed the outage can't be ruled out for this particular instance.
+
+**Mitigation applied:** pinned the wifi connection to the single strongest BSSID
+(`98:03:8E:33:4A:A6`, ~83% signal / 270 Mbit/s vs. the other three at 62%/130Mbit,
+49%/270Mbit, 20%/270Mbit) via `bssid:` in the netplan config, so NetworkManager can no
+longer scan/roam across the other three. Caveat: the actual failed-association log
+lines were already targeting this same BSSID (not one of the weaker ones), so this may
+reduce overall driver churn without fully addressing the root cause if it turns out to
+be a firmware/driver bug independent of which BSSID is targeted.
+
+**Status: monitoring.** The status page's longest-uptime-streak feature
+(`feat: track and show longest recorded uptime streak`) is the way to tell whether this
+actually helped — watch it over the next few days. If it freezes again on this same
+pinned BSSID, next things to try: tune down or disable wpa_supplicant's `bgscan`
+(currently `simple:30:-65:300`, inherited from NetworkManager/wpa_supplicant defaults —
+frequent background scanning is itself a plausible churn source even with roaming
+disabled), or treat it as a driver/firmware issue and consider a USB wifi dongle with a
+different chipset as a swap-in test.
