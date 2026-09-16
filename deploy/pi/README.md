@@ -102,6 +102,127 @@ here as a reference for any future card swap.
    journalctl -u timelapse-capture.service -f
    ```
 
+## Reliability hardening (freeze/crash mitigations)
+
+The Pi has frozen/gone unresponsive more than once (needing a manual power cycle) —
+see `docs/open-questions.md` #13 for the investigation and diagnosis. These are the
+OS/network-level changes made directly on the Pi in response (not part of the app
+itself, so nothing in git enforces them — redo them by hand on any new card/Pi):
+
+1. **Persistent journal logging**, so `journalctl -b -1` (previous boot) survives an
+   unclean reboot instead of being lost with the in-memory ring buffer — without this,
+   there's nothing to diagnose after a freeze:
+
+   ```
+   sudo mkdir -p /etc/systemd/journald.conf.d
+   sudo tee /etc/systemd/journald.conf.d/persistent.conf > /dev/null <<'EOF'
+   [Journal]
+   Storage=persistent
+   SystemMaxUse=200M
+   MaxRetentionSec=90day
+   EOF
+   sudo systemctl restart systemd-journald
+   ```
+
+   After a freeze/reboot, investigate with:
+
+   ```
+   journalctl --list-boots               # find the crashed boot's index (e.g. -1)
+   journalctl -b -1 --no-pager | tail -100   # last activity before it went dark
+   journalctl -b -1 -k --no-pager            # kernel-only messages for that boot
+   ```
+
+   A boot that ends with a normal shutdown sequence (`Reached target shutdown.target`,
+   `Shutting down.`, journald's own `Journal stopped`) was a clean reboot. One that just
+   stops mid-line with no shutdown sequence is a hard freeze/hang.
+
+2. **Disable wifi power-saving.** NetworkManager/the Broadcom wifi chip's driver
+   defaults can let the radio drop into a power-save state that it doesn't reliably
+   wake back out of:
+
+   ```
+   sudo mkdir -p /etc/NetworkManager/conf.d
+   sudo tee /etc/NetworkManager/conf.d/wifi-powersave-off.conf > /dev/null <<'EOF'
+   [connection]
+   wifi.powersave = 2
+   EOF
+   sudo systemctl restart NetworkManager
+   ```
+
+   (`2` is NetworkManager's enum value for "disable powersave"; `0`/unset means "use
+   the driver's default," which is often powersave-on.) Note this alone did **not**
+   fully resolve the freezes at this site — see #13 — but it's still a reasonable
+   baseline for any Pi Zero W deployment.
+
+3. **Pin wifi to a specific BSSID (site-specific — redo the discovery step for any new
+   site/router).** Worth doing when the site's SSID is broadcast from more than one
+   physical radio (mesh/multi-AP) — NetworkManager repeatedly scanning/reassociating
+   across them can churn the wifi driver hard enough to wedge the kernel outright (a
+   full freeze with nothing logged, not a clean panic).
+
+   List the BSSIDs for the SSID and pick the strongest/highest-PHY-rate one:
+
+   ```
+   nmcli -f BSSID,SSID,SIGNAL,FREQ,RATE,CHAN dev wifi list --rescan yes | grep "<SSID>"
+   ```
+
+   Find the netplan file backing the connection — the filename is a random per-install
+   UUID, so grep for the SSID rather than assuming a name:
+
+   ```
+   grep -l "<SSID>" /etc/netplan/*.yaml
+   ```
+
+   Add a `bssid:` key alongside the existing `auth:`/`password:` under that
+   access-point (same indentation level — `bssid` has been a native netplan key since
+   0.99, no `passthrough:` escape hatch needed):
+
+   ```yaml
+   access-points:
+     "<SSID>":
+       bssid: "AA:BB:CC:DD:EE:FF"
+       auth:
+         key-management: "psk"
+         password: "..."
+   ```
+
+   Validate before touching the live config (fails loudly, changes nothing, if the
+   YAML is malformed), then apply — expect NetworkManager to restart as part of this,
+   briefly dropping and re-establishing the connection:
+
+   ```
+   sudo netplan generate
+   sudo netplan apply
+   ```
+
+   Verify it landed on the intended BSSID:
+
+   ```
+   nmcli -t -f active,bssid,signal,freq dev wifi list --rescan no | grep "^yes"
+   ```
+
+   **Current value on `timelapse-pi` (set 2026-09-11):** pinned to `98:03:8E:33:4A:A6`
+   — the strongest of four `ReignCloudRanch` BSSIDs seen at this site (channel 6/2437
+   MHz, ~83% signal, 270 Mbit/s PHY rate vs. 62%/130Mbit, 49%/270Mbit, and 20%/270Mbit
+   for the others). This value is meaningless at a different site — redo the discovery
+   step above.
+
+   **Caveat:** the crash log from the freeze that prompted this pin showed
+   `wpa_supplicant` repeatedly failing to associate ("Association request to the
+   driver failed") with `98:03:8E:33:4A:A6` specifically — the same BSSID pinned
+   above, not one of the weaker ones. So this change stops NetworkManager from
+   scanning/roaming across the other three BSSIDs (less overall driver activity), but
+   if the freeze turns out to be a `brcmfmac` firmware/driver bug independent of which
+   BSSID is targeted, pinning won't fix it outright. See `docs/open-questions.md` #13
+   for what to try next if it recurs on this same pinned BSSID.
+
+**Not something we configured, but worth knowing about:** Raspberry Pi OS ships a
+hardware-watchdog default (`/usr/lib/systemd/system.conf.d/40-rpi-enable-watchdog.conf`,
+package-managed, not a local override) that arms the BCM2835 watchdog timer at boot. If
+the kernel ever fully hangs, this forces an automatic reboot rather than requiring a
+manual power cycle — already present on any stock Raspberry Pi OS install, nothing to
+set up.
+
 ## Updating the deployment
 
 `timelapse-update.timer` runs `deploy/pi/update.sh` every 10 minutes, so a PR merged to
