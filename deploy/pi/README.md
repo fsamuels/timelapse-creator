@@ -207,6 +207,15 @@ itself, so nothing in git enforces them — redo them by hand on any new card/Pi
    for the others). This value is meaningless at a different site — redo the discovery
    step above.
 
+   **Caveat:** the crash log from the freeze that prompted this pin showed
+   `wpa_supplicant` repeatedly failing to associate ("Association request to the
+   driver failed") with `98:03:8E:33:4A:A6` specifically — the same BSSID pinned
+   above, not one of the weaker ones. So this change stops NetworkManager from
+   scanning/roaming across the other three BSSIDs (less overall driver activity), but
+   if the freeze turns out to be a `brcmfmac` firmware/driver bug independent of which
+   BSSID is targeted, pinning won't fix it outright. See `docs/open-questions.md` #13
+   for what to try next if it recurs on this same pinned BSSID.
+
 **Not something we configured, but worth knowing about:** Raspberry Pi OS ships a
 hardware-watchdog default (`/usr/lib/systemd/system.conf.d/40-rpi-enable-watchdog.conf`,
 package-managed, not a local override) that arms the BCM2835 watchdog timer at boot. If
