@@ -1292,7 +1292,7 @@ def render_html(page_data, now, show_stale_banner=False, system=None):
         f'<div class="subtitle">Generated {html.escape(now.strftime("%Y-%m-%d %H:%M"))} '
         f'&middot; {html.escape(now.strftime("%Z"))} &middot; '
         f'<span class="live-ago" id="live-ago" data-generated="{html.escape(now.isoformat())}">'
-        "just now</span></div></div>"
+        "Calculating&hellip;</span></div></div>"
         '<a class="archive-link" href="archive/">browse full archive &rarr;</a></div>',
     ]
 
