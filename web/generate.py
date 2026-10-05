@@ -16,7 +16,7 @@ hourly drill-down for just that day (see ``hourly_counts`` /
 an empty sub-grid.
 
 Each cam card also links to a separate ``gallery/<cam-key>.html`` page (see
-``_gallery_page_html``) showing that cam's last 24 hours as a newest-first
+``_gallery_page_html``) showing that cam's 100 most recent frames as a newest-first
 thumbnail grid — a real per-frame page rather than another ``:target`` modal,
 so the main page's size stays independent of how many recent frames exist.
 
@@ -59,6 +59,7 @@ CONFIG_PATH = Path(__file__).parent.parent / "capture" / "config.yaml"
 REPO_DIR = Path(__file__).parent.parent
 DEFAULT_OUTPUT = "site/index.html"
 HEATMAP_WEEKS = 13  # ~a quarter, the full-history window shown per cam
+RECENT_FRAME_COUNT = 100  # frames shown on each cam's recent gallery page
 RECENT_DAYS = 31  # the compact recent-activity strip on each cam card
 HEATMAP_LEVELS = 2  # off / low / high — see _level()
 STALE_MULTIPLIER = 2  # flag a cam stale after this many missed capture intervals
@@ -567,22 +568,14 @@ def recent_strip(counts, end_date, days=RECENT_DAYS, levels=HEATMAP_LEVELS):
     return cells
 
 
-def recent_frames(frames, now, hours=24):
-    """Frames captured in the last ``hours``, oldest-first.
+def recent_frames(frames, count=RECENT_FRAME_COUNT):
+    """The newest ``count`` frames, oldest-first.
 
     ``frames`` must be sorted oldest-first (as ``scan_archive`` returns them).
-    Walks back from the newest frame rather than scanning/bisecting the whole
-    history, so the cost is proportional to how many frames actually fall in
-    the window, not the cam's total archive size.
+    Count-based rather than time-based so a cam that has been offline for days
+    still shows its latest frames instead of an empty page.
     """
-    cutoff = now - timedelta(hours=hours)
-    recent = []
-    for frame in reversed(frames):
-        if parse_frame_time(frame) < cutoff:
-            break
-        recent.append(frame)
-    recent.reverse()
-    return recent
+    return frames[-count:] if count > 0 else []
 
 
 def _human_bytes(n):
@@ -740,7 +733,7 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                     **base_view,
                     "stats_disabled": False,
                     "recent": recent_strip(counts, today),
-                    "recent_frames": recent_frames(frames, now),
+                    "recent_frames": recent_frames(frames),
                     "full_grid": full_grid,
                     "day_details": day_details_for_grid(scan["hourly_counts"], full_grid),
                     "bytes": cam_bytes,
@@ -1130,7 +1123,7 @@ def _cam_card_html(cam, now):
             '<div class="cam-heatmap-row">'
             f'{_recent_strip_html(cam["recent"])}'
             f'<a class="history-btn" href="#history-{key}">full history &rarr;</a>'
-            f'<a class="history-btn" href="gallery/{key}.html">past 24h &rarr;</a>'
+            f'<a class="history-btn" href="gallery/{key}.html">recent &rarr;</a>'
             "</div>"
         )
         recent_info = '<div class="recent-info">Tap a day for details</div>'
@@ -1186,7 +1179,7 @@ def _gallery_frame_url(frame, archive_dir):
 
 
 def _gallery_page_html(cam, archive_dir, index_href="../index.html"):
-    """Standalone page: a cam's last-24h frames as a newest-first thumbnail grid.
+    """Standalone page: a cam's most recent frames as a newest-first thumbnail grid.
 
     A separate file per cam (see ``main``) rather than folded into the main
     status page's history modal — unlike the heatmap grid's colored cells,
@@ -1209,16 +1202,16 @@ def _gallery_page_html(cam, archive_dir, index_href="../index.html"):
         )
         body = f'<div class="gallery-grid">{cells}</div>'
     else:
-        body = '<p class="gallery-empty">No frames captured in the last 24 hours.</p>'
+        body = '<p class="gallery-empty">No frames captured yet.</p>'
     return (
         "<!doctype html>"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{name_html} &middot; past 24h</title>"
+        f"<title>{name_html} &middot; recent</title>"
         f"<style>{_GALLERY_STYLE}</style></head><body>"
         '<div class="wrap"><div class="content">'
         f'<a class="back-link" href="{html.escape(index_href)}">&larr; status</a>'
-        f'<div class="title">{name_html} &middot; past 24h</div>'
+        f'<div class="title">{name_html} &middot; recent</div>'
         f"{body}"
         "</div></div></body></html>"
     )

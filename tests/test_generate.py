@@ -165,22 +165,19 @@ def test_recent_strip_ignores_activity_outside_its_window():
     assert cells[-1]["level"] == 2  # scoped peak is just today's 1 frame
 
 
-def test_recent_frames_keeps_only_the_last_24h_oldest_to_newest(tmp_path):
+def test_recent_frames_keeps_only_the_newest_count_oldest_to_newest(tmp_path):
     frames = [
-        _write_frame(tmp_path, "s", "c", "2026-07-15T10-00-00-000000-0800"),  # >24h old
-        _write_frame(tmp_path, "s", "c", "2026-07-16T09-00-00-000000-0800"),
-        _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-10T10-00-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-11T09-00-00-000000-0800"),
+        _write_frame(tmp_path, "s", "c", "2026-07-12T12-00-00-000000-0800"),
     ]
-    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
 
-    recent = generate.recent_frames(frames, now)
-
-    assert recent == frames[1:]
+    assert generate.recent_frames(frames, count=2) == frames[1:]
+    assert generate.recent_frames(frames) == frames  # fewer than the default cap
 
 
-def test_recent_frames_empty_when_nothing_in_window():
-    now = datetime(2026, 7, 16, 12, 15, tzinfo=PACIFIC)
-    assert generate.recent_frames([], now) == []
+def test_recent_frames_empty_when_no_frames():
+    assert generate.recent_frames([]) == []
 
 
 def test_gallery_frame_url_is_relative_to_the_gallery_dir(tmp_path):
@@ -203,7 +200,7 @@ def test_gallery_page_html_lists_frames_newest_first(tmp_path):
     first = page.index("2026-07-16T12-00-00")
     second = page.index("2026-07-16T09-00-00")
     assert first < second  # newest frame's <img> appears before the older one
-    assert "past 24h" in page
+    assert "recent" in page
 
 
 def test_gallery_page_html_empty_state(tmp_path):
@@ -211,7 +208,7 @@ def test_gallery_page_html_empty_state(tmp_path):
 
     page = generate._gallery_page_html(cam, tmp_path)
 
-    assert "No frames captured in the last 24 hours" in page
+    assert "No frames captured yet" in page
 
 
 def test_build_page_data_includes_recent_frames(tmp_path):
