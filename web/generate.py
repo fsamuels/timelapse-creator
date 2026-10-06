@@ -578,6 +578,42 @@ def recent_frames(frames, count=RECENT_FRAME_COUNT):
     return frames[-count:] if count > 0 else []
 
 
+def _format_duration(delta):
+    """Compact duration like '45m', '3h 15m' or '2d 3h' (largest two units)."""
+    minutes = int(delta.total_seconds() // 60)
+    days, minutes = divmod(minutes, 24 * 60)
+    hours, minutes = divmod(minutes, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def gallery_items(frames, now, stale_after):
+    """Interleave capture-lapse markers with ``frames`` for the gallery, oldest-first.
+
+    Each item is ``("frame", path)`` or ``("gap", start, end, duration)``. One
+    marker per lapse, however many captures it spans: a gap is any stretch
+    longer than ``stale_after`` (the same threshold as the stale badge, so a
+    capture that merely runs a little late never trips it). A lapse still in
+    progress (newest frame to ``now``) gets a marker too, with ``end=None``.
+    A zero ``stale_after`` (an unmanaged cam with no known interval) disables
+    markers entirely.
+    """
+    items = []
+    prev_time = None
+    for frame in frames:
+        frame_time = parse_frame_time(frame)
+        if prev_time is not None and stale_after and frame_time - prev_time > stale_after:
+            items.append(("gap", prev_time, frame_time, frame_time - prev_time))
+        items.append(("frame", frame))
+        prev_time = frame_time
+    if prev_time is not None and stale_after and now - prev_time > stale_after:
+        items.append(("gap", prev_time, None, now - prev_time))
+    return items
+
+
 def _human_bytes(n):
     """Render a byte count like '482 KB' or '1.3 GB'."""
     size = float(n)
@@ -733,7 +769,9 @@ def build_page_data(archive_dir, log_path, now, cam_config=None, site_order=None
                     **base_view,
                     "stats_disabled": False,
                     "recent": recent_strip(counts, today),
-                    "recent_frames": recent_frames(frames),
+                    "recent_items": gallery_items(
+                        recent_frames(frames), now, stale_after_for(cam_cfg)
+                    ),
                     "full_grid": full_grid,
                     "day_details": day_details_for_grid(scan["hourly_counts"], full_grid),
                     "bytes": cam_bytes,
@@ -1169,6 +1207,12 @@ a{{text-decoration:none}}
 .gallery-cell img{{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}}
 .gallery-ts{{display:block;padding:5px 7px;font:400 10px {_FONT_STACK};
   color:rgba(255,255,255,.6)}}
+.gallery-gap-box{{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;width:100%;aspect-ratio:4/3;padding:8px;
+  overflow:hidden;text-align:center;font:400 10px {_FONT_STACK};
+  color:rgba(255,255,255,.4);border:1px dashed rgba(255,255,255,.18);
+  border-radius:8px}}
+.gallery-gap-box b{{font:700 16px {_FONT_STACK};color:rgba(255,255,255,.7)}}
 .gallery-empty{{margin-top:18px;font:400 12px {_FONT_STACK};color:rgba(255,255,255,.4)}}
 """
 
@@ -1176,6 +1220,27 @@ a{{text-decoration:none}}
 def _gallery_frame_url(frame, archive_dir):
     """URL for one archived frame, relative to a page in the ``gallery/`` dir."""
     return f"../archive/{Path(frame).relative_to(archive_dir).as_posix()}"
+
+
+def _gallery_cell_html(item, name_html, archive_dir):
+    """One grid cell: a frame thumbnail, or a same-sized capture-lapse placeholder."""
+    if item[0] == "gap":
+        _, start, end, duration = item
+        span = start.strftime("%m-%d %H:%M") + " &rarr; "
+        span += end.strftime("%m-%d %H:%M") if end else "now"
+        return (
+            '<div class="gallery-cell">'
+            f'<div class="gallery-gap-box"><b>{_format_duration(duration)}</b>{span}</div>'
+            '<span class="gallery-ts">no images</span></div>'
+        )
+    frame = item[1]
+    ts = html.escape(parse_frame_time(frame).strftime("%Y-%m-%d %H:%M"))
+    url = _gallery_frame_url(frame, archive_dir)
+    return (
+        f'<a class="gallery-cell" href="{url}" target="_blank" rel="noopener">'
+        f'<img src="{url}" alt="{name_html} frame at {ts}" loading="lazy">'
+        f'<span class="gallery-ts">{ts}</span></a>'
+    )
 
 
 def _gallery_page_html(cam, archive_dir, index_href="../index.html"):
@@ -1188,18 +1253,9 @@ def _gallery_page_html(cam, archive_dir, index_href="../index.html"):
     that cost independent of how many cams/frames exist.
     """
     name_html = html.escape(cam["name"])
-    frames = list(reversed(cam.get("recent_frames", [])))
-    if frames:
-        cells = "".join(
-            '<a class="gallery-cell" href="{url}" target="_blank" rel="noopener">'
-            '<img src="{url}" alt="{name} frame at {ts}" loading="lazy">'
-            '<span class="gallery-ts">{ts}</span></a>'.format(
-                url=_gallery_frame_url(frame, archive_dir),
-                name=name_html,
-                ts=html.escape(parse_frame_time(frame).strftime("%Y-%m-%d %H:%M")),
-            )
-            for frame in frames
-        )
+    items = list(reversed(cam.get("recent_items", [])))
+    if items:
+        cells = "".join(_gallery_cell_html(item, name_html, archive_dir) for item in items)
         body = f'<div class="gallery-grid">{cells}</div>'
     else:
         body = '<p class="gallery-empty">No frames captured yet.</p>'

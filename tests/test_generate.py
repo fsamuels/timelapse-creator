@@ -193,7 +193,7 @@ def test_gallery_page_html_lists_frames_newest_first(tmp_path):
         _write_frame(tmp_path, "s", "c", "2026-07-16T09-00-00-000000-0800"),
         _write_frame(tmp_path, "s", "c", "2026-07-16T12-00-00-000000-0800"),
     ]
-    cam = {"name": "summit", "key": "s--c", "recent_frames": frames}
+    cam = {"name": "summit", "key": "s--c", "recent_items": [("frame", f) for f in frames]}
 
     page = generate._gallery_page_html(cam, tmp_path)
 
@@ -204,7 +204,7 @@ def test_gallery_page_html_lists_frames_newest_first(tmp_path):
 
 
 def test_gallery_page_html_empty_state(tmp_path):
-    cam = {"name": "summit", "key": "s--c", "recent_frames": []}
+    cam = {"name": "summit", "key": "s--c", "recent_items": []}
 
     page = generate._gallery_page_html(cam, tmp_path)
 
@@ -219,7 +219,7 @@ def test_build_page_data_includes_recent_frames(tmp_path):
         tmp_path, None, now, cam_config={"summit": {"interval_minutes": 15}}
     )
 
-    assert len(data["sites"][0]["cams"][0]["recent_frames"]) == 1
+    assert len(data["sites"][0]["cams"][0]["recent_items"]) == 1
 
 
 def test_render_html_links_to_the_cams_gallery_page(tmp_path):
@@ -1373,3 +1373,67 @@ def test_render_html_footer_shows_longest_uptime(tmp_path):
     doc = generate.render_html(data, now, system=system)
 
     assert "Longest uptime 12d 4h &middot; 2026-06-01 &rarr; 2026-06-13" in doc
+
+
+_INTERVAL = timedelta(minutes=15)
+_STALE = timedelta(minutes=30)
+
+
+def _frames_at(tmp_path, *stamps):
+    return [_write_frame(tmp_path, "s", "c", f"2026-07-16T{s}-00-000000-0800") for s in stamps]
+
+
+def test_gallery_items_no_gap_when_captures_run_a_little_late(tmp_path):
+    frames = _frames_at(tmp_path, "12-00", "12-19", "12-41")  # 19m, 22m gaps
+    now = datetime(2026, 7, 16, 12, 50, tzinfo=PACIFIC)
+
+    items = generate.gallery_items(frames, now, _STALE)
+
+    assert [i[0] for i in items] == ["frame"] * 3
+
+
+def test_gallery_items_one_marker_for_a_multi_interval_lapse(tmp_path):
+    frames = _frames_at(tmp_path, "12-00", "15-15")  # ~13 missed captures
+    now = datetime(2026, 7, 16, 15, 20, tzinfo=PACIFIC)
+
+    items = generate.gallery_items(frames, now, _STALE)
+
+    assert [i[0] for i in items] == ["frame", "gap", "frame"]
+    assert items[1][3] == timedelta(hours=3, minutes=15)
+
+
+def test_gallery_items_marks_a_lapse_still_in_progress(tmp_path):
+    frames = _frames_at(tmp_path, "12-00")
+    now = datetime(2026, 7, 16, 14, 0, tzinfo=PACIFIC)
+
+    items = generate.gallery_items(frames, now, _STALE)
+
+    assert items[-1] == ("gap", generate.parse_frame_time(frames[0]), None, timedelta(hours=2))
+
+
+def test_gallery_items_no_markers_when_threshold_unknown(tmp_path):
+    frames = _frames_at(tmp_path, "12-00", "15-00")
+    now = datetime(2026, 7, 17, 12, 0, tzinfo=PACIFIC)
+
+    items = generate.gallery_items(frames, now, timedelta(0))
+
+    assert [i[0] for i in items] == ["frame", "frame"]
+
+
+def test_format_duration():
+    assert generate._format_duration(timedelta(minutes=45)) == "45m"
+    assert generate._format_duration(timedelta(hours=3, minutes=15)) == "3h 15m"
+    assert generate._format_duration(timedelta(days=2, hours=3, minutes=40)) == "2d 3h"
+
+
+def test_gallery_page_html_renders_gap_placeholder_newest_first(tmp_path):
+    frames = _frames_at(tmp_path, "12-00", "15-15")
+    now = datetime(2026, 7, 16, 15, 20, tzinfo=PACIFIC)
+    items = generate.gallery_items(frames, now, _STALE)
+    cam = {"name": "summit", "key": "s--c", "recent_items": items}
+
+    page = generate._gallery_page_html(cam, tmp_path)
+
+    assert page.count('class="gallery-gap-box"') == 1
+    assert "3h 15m" in page
+    assert page.index("15-15") < page.index("3h 15m") < page.index("12-00")
