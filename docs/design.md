@@ -407,7 +407,7 @@ downloaded per day.
   are further apart than the cam's stale threshold (`stale_after_for()`, 2 × `interval_minutes`
   — the same rule as the status badge, so a capture running a few minutes late never trips it
   and the two views agree). One tile per lapse regardless of how many captures it spans, showing
-  its duration and start → end. A lapse still in progress (newest frame → now) gets a tile at
+  its duration (large, bold, black on white so it stands out among the photos) and start → end. A lapse still in progress (newest frame → now) gets a tile at
   the top. Placeholders don't count toward the 100-frame cap, and an unmanaged cam (no known
   interval) gets none.
 - **Activity leveling:** both the 31-day strip and the full-history grid use the same
