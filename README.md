@@ -86,7 +86,7 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   a bottom-sheet — implemented with CSS `:target`, no `<script>` tag — from the archive
   filenames and the capture log; clicking a day with frames in that grid drills down further
   into an hourly breakdown for just that day, and a "recent" link opening a separate
-  newest-first thumbnail-grid page (`gallery/<cam-key>.html`) of that cam's 100 most recent frames,
+  newest-first thumbnail-grid page (`gallery/<cam-key>.html`) of that cam's 100 most recent frames (with a same-sized placeholder tile showing the duration of any capture lapse),
   regenerated alongside the main page each run. Also symlinks the raw archive in next to the
   page so it's directly browsable, and a footer shows host stats (uptime, longest recorded
   uptime streak with its start/end dates, memory, load average), how long the page took to

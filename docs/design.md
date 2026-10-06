@@ -402,6 +402,14 @@ downloaded per day.
   alongside `index.html` on every run (same regenerate-on-capture model, no new triggers);
   written into `gallery/` next to the page, imagery served through the existing `archive/`
   symlink.
+- **Capture-lapse placeholders in the gallery (2026-10):** `gallery_items()` interleaves a
+  dashed placeholder tile, same grid-cell size as a thumbnail, wherever consecutive frames
+  are further apart than the cam's stale threshold (`stale_after_for()`, 2 × `interval_minutes`
+  — the same rule as the status badge, so a capture running a few minutes late never trips it
+  and the two views agree). One tile per lapse regardless of how many captures it spans, showing
+  its duration and start → end. A lapse still in progress (newest frame → now) gets a tile at
+  the top. Placeholders don't count toward the 100-frame cap, and an unmanaged cam (no known
+  interval) gets none.
 - **Activity leveling:** both the 31-day strip and the full-history grid use the same
   `_level()` bucketing, now a simple off/low/high (3-color) scale rather than the old
   5-color one — visually quieter, matching the reference's intent for the strip to read as
