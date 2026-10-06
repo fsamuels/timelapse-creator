@@ -1208,11 +1208,10 @@ a{{text-decoration:none}}
 .gallery-ts{{display:block;padding:5px 7px;font:400 10px {_FONT_STACK};
   color:rgba(255,255,255,.6)}}
 .gallery-gap-box{{display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:4px;width:100%;aspect-ratio:4/3;padding:8px;
-  overflow:hidden;text-align:center;font:400 10px {_FONT_STACK};
-  color:rgba(255,255,255,.4);border:1px dashed rgba(255,255,255,.18);
-  border-radius:8px}}
-.gallery-gap-box b{{font:700 16px {_FONT_STACK};color:rgba(255,255,255,.7)}}
+  justify-content:center;gap:6px;width:100%;aspect-ratio:4/3;padding:8px;
+  overflow:hidden;text-align:center;font:500 11px {_FONT_STACK};
+  color:#111;background:#fff;border-radius:8px}}
+.gallery-gap-box b{{font:800 26px/1.05 {_FONT_STACK};color:#000;letter-spacing:-.02em}}
 .gallery-empty{{margin-top:18px;font:400 12px {_FONT_STACK};color:rgba(255,255,255,.4)}}
 """
 
