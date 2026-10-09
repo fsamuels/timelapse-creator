@@ -1,0 +1,10 @@
+[Unit]
+Description=Check gateway reachability every 5 minutes (see timelapse-net-watchdog.service)
+
+[Timer]
+# Grace period after boot so wifi has time to associate before checks begin.
+OnBootSec=10min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
