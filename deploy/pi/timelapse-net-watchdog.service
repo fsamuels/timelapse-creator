@@ -1,0 +1,6 @@
+[Unit]
+Description=Reboot the Pi if its default gateway has been unreachable for ~30 minutes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/timelapse-creator/deploy/pi/net-watchdog.sh

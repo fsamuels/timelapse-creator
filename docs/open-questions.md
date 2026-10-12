@@ -448,3 +448,15 @@ pinned BSSID, next things to try: tune down or disable wpa_supplicant's `bgscan`
 frequent background scanning is itself a plausible churn source even with roaming
 disabled), or treat it as a driver/firmware issue and consider a USB wifi dongle with a
 different chipset as a swap-in test.
+
+**Follow-up (2026-10-09, ahead of a 2-week absence):** the Pi hit a 25-day uptime streak
+after the BSSID pin, so the freeze looks mitigated, but the layers that would recover or
+report a recurrence unattended were thin. Added (details and verification steps in
+`deploy/pi/README.md`, "Unattended-operation safeguards"): `TimeoutStartSec=10min` on the
+capture service (a hung fetch would otherwise silently stall capture forever), a
+gateway-reachability watchdog that reboots after ~30 min offline with a 6-hour loop guard
+(covers wifi dying without wedging the kernel, which the hardware watchdog can't see), and
+a healthchecks.io ping after each capture run so a stoppage emails the owner. Still
+unverified at time of writing: that the hardware watchdog is actually armed — the Sept 11
+recovery may have been a manual power-cycle, so it was never proven. The README has the
+check and a crash test.

@@ -96,7 +96,8 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
 - `.github/workflows/capture.yml` — manual-only (`workflow_dispatch`) now that the Pi is the
   sole scheduled capture platform; runs `capture/main.py` with no args as an emergency
   fallback
-- `deploy/pi/` — systemd units (capture timer/service + web-server service) and a bring-up
+- `deploy/pi/` — systemd units (capture timer/service + web-server service + network
+  watchdog, plus an optional healthchecks.io ping) and a bring-up
   doc; **deployed and running** on the Pi (`timelapse-pi`), capturing all ten active cams
   and serving the status page
 - `normalize/` — aligns a directory of not-quite-fixed-position photos (e.g. drone shots) onto

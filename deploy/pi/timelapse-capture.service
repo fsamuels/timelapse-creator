@@ -3,6 +3,12 @@ Description=Capture webcam frames for timelapse-creator (Pi)
 
 [Service]
 Type=oneshot
+# A hung yt-dlp/ffmpeg would otherwise leave this oneshot "activating" forever,
+# and the timer never starts a new run while the previous one is still active —
+# capture would silently stop. Covers ExecStartPost too; kills the whole cgroup.
+TimeoutStartSec=10min
+# Optional, Pi-local (not in git): HC_PING_URL for ping-healthcheck.sh below.
+EnvironmentFile=-/etc/timelapse/healthchecks.env
 WorkingDirectory=/opt/timelapse-creator
 # yt-dlp is pip-installed into the venv (requirements.txt), not apt-installed
 # like ffmpeg, so it only exists at .venv/bin/yt-dlp — without this on PATH,
@@ -10,6 +16,9 @@ WorkingDirectory=/opt/timelapse-creator
 # every type: youtube cam (see Hawaii cams outage, 2026-08-06).
 Environment=PATH=/opt/timelapse-creator/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 ExecStart=/opt/timelapse-creator/.venv/bin/python -m capture.main --config capture/config.pi.yaml
+# Tell healthchecks.io a capture run finished (no-op unless HC_PING_URL is set).
+# Before page generation so a slow/failed render can't delay or suppress it.
+ExecStartPost=-/usr/bin/bash /opt/timelapse-creator/deploy/pi/ping-healthcheck.sh
 # Regenerate the static status page right after each capture (web_output path
 # comes from the config). Non-fatal: a failed page render must not fail capture.
 ExecStartPost=-/opt/timelapse-creator/.venv/bin/python -m web.generate --config capture/config.pi.yaml

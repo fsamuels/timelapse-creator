@@ -79,7 +79,8 @@ here as a reference for any future card swap.
    ```
    sudo cp deploy/pi/timelapse-capture.service deploy/pi/timelapse-capture.timer \
            deploy/pi/timelapse-web.service deploy/pi/timelapse-update.service \
-           deploy/pi/timelapse-update.timer /etc/systemd/system/
+           deploy/pi/timelapse-update.timer deploy/pi/timelapse-net-watchdog.service \
+           deploy/pi/timelapse-net-watchdog.timer /etc/systemd/system/
    ```
 
 5. **Adjust the placeholder paths** in the unit files if your clone or venv don't live
@@ -94,6 +95,7 @@ here as a reference for any future card swap.
    sudo systemctl enable --now timelapse-capture.timer
    sudo systemctl enable --now timelapse-web.service
    sudo systemctl enable --now timelapse-update.timer
+   sudo systemctl enable --now timelapse-net-watchdog.timer
    ```
 
 7. Watch it run:
@@ -222,6 +224,84 @@ package-managed, not a local override) that arms the BCM2835 watchdog timer at b
 the kernel ever fully hangs, this forces an automatic reboot rather than requiring a
 manual power cycle — already present on any stock Raspberry Pi OS install, nothing to
 set up.
+
+## Unattended-operation safeguards (hang, network loss, silent failure)
+
+Layers, from lowest to highest — each catches a failure the one below it can't:
+
+1. **Hardware watchdog** (kernel hard-hang → auto reboot). See the note at the end of
+   "Reliability hardening" above. It's stock Raspberry Pi OS behavior, but it was never
+   confirmed on this Pi, so verify and test it once (before leaving the Pi unattended):
+
+   ```
+   systemctl show -p RuntimeWatchdogUSec    # non-zero (e.g. 1min) = armed
+   ls /dev/watchdog
+   ```
+
+   If `RuntimeWatchdogUSec=0`, arm it:
+
+   ```
+   sudo mkdir -p /etc/systemd/system.conf.d
+   sudo tee /etc/systemd/system.conf.d/watchdog.conf > /dev/null <<'EOF'
+   [Manager]
+   RuntimeWatchdogSec=15
+   RebootWatchdogSec=2min
+   EOF
+   sudo systemctl daemon-reexec
+   ```
+
+   Then prove it works — this deliberately crashes the kernel, so only do it while you can
+   reach the Pi if it doesn't come back. It should reboot by itself within about a minute:
+
+   ```
+   sudo sh -c 'echo 1 > /proc/sys/kernel/sysrq; echo c > /proc/sysrq-trigger'
+   ```
+
+2. **Capture timeout** (`TimeoutStartSec=10min` in `timelapse-capture.service`). The
+   service is `Type=oneshot`, and a timer never starts a new run while the previous one is
+   still active — so one hung `yt-dlp`/`ffmpeg` would silently stop all capture. Past
+   10 minutes systemd kills the run (and its children); the next tick starts clean.
+
+3. **Network watchdog** (`timelapse-net-watchdog.timer` → `net-watchdog.sh`). Every
+   5 minutes, pings the default gateway; after 6 consecutive failures (~30 min) it runs
+   `systemctl reboot`. This covers the failure the hardware watchdog can't: wifi dead but
+   the kernel alive. Deliberately checks the gateway, not the internet — a rebooted Pi
+   can't fix an ISP outage. Loop guard: at most one watchdog reboot per 6 hours
+   (`/var/lib/timelapse/net-watchdog-last-reboot`), so a dead router can't reboot-loop
+   the Pi. Starts 10 minutes after boot. See what it's doing with
+   `journalctl -u timelapse-net-watchdog.service`.
+
+4. **Dead-man's-switch ping** ([healthchecks.io](https://healthchecks.io), free tier is
+   enough). After each completed capture run, `ping-healthcheck.sh` hits a check URL;
+   healthchecks.io emails you when the pings *stop*. This is the only layer that notifies
+   you, and it also covers total power/network loss, which nothing on the Pi can. One-time
+   setup:
+
+   - Create a check with period **15 minutes** and grace **30 minutes** (a single missed
+     tick won't page you), with your email as the notification channel.
+   - On the Pi, store the check's ping URL (not in git):
+
+     ```
+     sudo mkdir -p /etc/timelapse
+     echo 'HC_PING_URL=https://hc-ping.com/<your-check-uuid>' | sudo tee /etc/timelapse/healthchecks.env
+     sudo chmod 600 /etc/timelapse/healthchecks.env
+     ```
+
+   - Without that file the ping is a silent no-op. A failed ping never fails the capture
+     unit.
+
+**First deploy of these:** `update.sh` installs the changed unit files automatically, but
+the run that pulls this change is still the *old* `update.sh`, which doesn't know about the
+new timer. Enable it by hand once (the updated `update.sh` does this itself on later
+unit-file changes):
+
+```
+sudo systemctl enable --now timelapse-net-watchdog.timer
+systemctl list-timers timelapse-net-watchdog.timer    # confirm it's scheduled
+```
+
+Also: while away, don't merge to `main` — `timelapse-update.timer` redeploys every merge
+within 10 minutes, unattended.
 
 ## Updating the deployment
 
