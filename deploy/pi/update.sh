@@ -63,9 +63,10 @@ if [ -n "$CHANGED_UNITS" ]; then
   echo "$CHANGED_UNITS"
   sudo cp deploy/pi/*.service deploy/pi/*.timer /etc/systemd/system/
   sudo systemctl daemon-reload
-  sudo systemctl restart timelapse-capture.timer timelapse-web.service timelapse-update.timer
   # Idempotent; picks up timers added after the Pi was first set up.
-  sudo systemctl enable --now timelapse-net-watchdog.timer
+  sudo systemctl enable timelapse-net-watchdog.timer
+  sudo systemctl restart timelapse-capture.timer timelapse-web.service timelapse-update.timer \
+    timelapse-net-watchdog.timer
 fi
 
 echo "==> Done"

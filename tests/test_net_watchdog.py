@@ -59,6 +59,14 @@ def test_reboots_only_after_max_consecutive_failures(env):
     assert rebooted(env)
 
 
+def test_missing_default_route_counts_as_failure(env, tmp_path):
+    # Wifi fully disassociated: no default route at all, so there's no gateway to ping.
+    (tmp_path / "bin" / "ip").write_text("#!/bin/sh\n")
+    for _ in range(3):
+        run(env, ping_exit=0)
+    assert rebooted(env)
+
+
 def test_recovery_between_failures_prevents_reboot(env):
     run(env)
     run(env)

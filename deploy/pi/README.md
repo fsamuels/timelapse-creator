@@ -230,8 +230,11 @@ set up.
 Layers, from lowest to highest — each catches a failure the one below it can't:
 
 1. **Hardware watchdog** (kernel hard-hang → auto reboot). See the note at the end of
-   "Reliability hardening" above. It's stock Raspberry Pi OS behavior, but it was never
-   confirmed on this Pi, so verify and test it once (before leaving the Pi unattended):
+   "Reliability hardening" above. Confirmed armed on `timelapse-pi` (2026-10-08:
+   `RuntimeWatchdogUSec=1min`, `RebootWatchdogUSec=2min`, from the stock package default),
+   and the Sept 11 freeze came back up 47 seconds after the log stopped — consistent with
+   a watchdog reset. It has never been deliberately crash-tested, though. To re-check on
+   a new card/Pi:
 
    ```
    systemctl show -p RuntimeWatchdogUSec    # non-zero (e.g. 1min) = armed
@@ -291,17 +294,36 @@ Layers, from lowest to highest — each catches a failure the one below it can't
      unit.
 
 **First deploy of these:** `update.sh` installs the changed unit files automatically, but
-the run that pulls this change is still the *old* `update.sh`, which doesn't know about the
-new timer. Enable it by hand once (the updated `update.sh` does this itself on later
-unit-file changes):
+the run that pulled this change was still the *old* `update.sh`, which didn't know about
+the new timer, so it had to be enabled by hand once (the updated `update.sh` does this
+itself on later unit-file changes):
 
 ```
 sudo systemctl enable --now timelapse-net-watchdog.timer
 systemctl list-timers timelapse-net-watchdog.timer    # confirm it's scheduled
 ```
 
-Also: while away, don't merge to `main` — `timelapse-update.timer` redeploys every merge
-within 10 minutes, unattended.
+**State on `timelapse-pi` as of 2026-10-13** (the day before a 2-week absence, 32 days
+into the current uptime streak):
+
+| Layer | State |
+| --- | --- |
+| Hardware watchdog | Armed (stock default). Not crash-tested — deliberately left alone. |
+| Capture timeout | Live since the 2026-10-09 deploy. |
+| Network watchdog | Timer enabled 2026-10-13; first run passed (gateway reachable). |
+| healthchecks.io ping | **Not configured** — no `/etc/timelapse/healthchecks.env`, so the ping is a no-op and nothing notifies anyone if capture stops. |
+| Tailscale | **Not installed** — no access from off the home network. |
+
+The Pi has not rebooted since these units were installed, so the first reboot with them in
+place is still untested. To revisit: set up the healthchecks.io check, install Tailscale
+(after switching SSH to key-only — password auth is still on), and crash-test the hardware
+watchdog. See `docs/open-questions.md` #13.
+
+Also: while away, be careful what merges to `main` — `timelapse-update.timer` redeploys
+every merge within 10 minutes, unattended. That's also the only way to change the Pi from
+off the home network (there's no Tailscale on it yet), so a small config-only merge — e.g.
+re-pinning a stale Hawaii YouTube ID in `capture/config.pi.yaml` — is the remote-fix path;
+anything touching `deploy/pi/` or `requirements.txt` should wait.
 
 ## Updating the deployment
 
@@ -430,6 +452,4 @@ match that deployment (`/opt/timelapse-creator`, `/var/lib/timelapse`); adjust t
 differ.
 
 `timelapse-update.timer` (auto-redeploy on merge to `main`, including unit-file changes
-like a capture cadence tweak) is written up above but not yet installed on `timelapse-pi` —
-run the `safe.directory` config from step 1, copy the unit into place per the "Copy the
-unit files" step, and `enable --now` it to turn on automatic deploys.
+like a capture cadence tweak) is installed and running on `timelapse-pi`.
