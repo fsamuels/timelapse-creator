@@ -9,5 +9,9 @@ Description=Pull and redeploy timelapse-creator from main
 #   git config --system --add safe.directory /opt/timelapse-creator
 # on the Pi (see deploy/pi/README.md) to satisfy git's ownership check.
 Type=oneshot
+# A `git pull` stalled on degraded wifi has no timeout of its own and would
+# otherwise hold this oneshot "activating" forever, blocking every later tick.
+# Generous, since a pip source build on the Pi Zero W (armv6) is slow.
+TimeoutStartSec=30min
 WorkingDirectory=/opt/timelapse-creator
 ExecStart=/opt/timelapse-creator/deploy/pi/update.sh

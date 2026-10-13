@@ -456,7 +456,26 @@ report a recurrence unattended were thin. Added (details and verification steps 
 capture service (a hung fetch would otherwise silently stall capture forever), a
 gateway-reachability watchdog that reboots after ~30 min offline with a 6-hour loop guard
 (covers wifi dying without wedging the kernel, which the hardware watchdog can't see), and
-a healthchecks.io ping after each capture run so a stoppage emails the owner. Still
-unverified at time of writing: that the hardware watchdog is actually armed — the Sept 11
-recovery may have been a manual power-cycle, so it was never proven. The README has the
-check and a crash test.
+a healthchecks.io ping after each capture run so a stoppage emails the owner. The
+hardware watchdog was checked on the Pi on 2026-10-08 and is armed
+(`RuntimeWatchdogUSec=1min`); together with the 47-second gap before the Sept 11 reboot,
+that makes a watchdog reset the likely explanation for that recovery. It still hasn't been
+deliberately crash-tested — the README has the command.
+
+**Left open on purpose (2026-10-13, the day before leaving):** with the Pi 32 days into an
+uptime streak, the call was "if it ain't broke, don't fix it" — only the network watchdog
+timer was enabled by hand (the deploy had installed it but not enabled it). Deliberately
+*not* done, to revisit on return:
+
+- [ ] **healthchecks.io alert** — not set up, so the ping added above is a no-op. Until it
+      is, a stoppage is only visible by looking at the status page from the home network.
+- [ ] **Tailscale** — not installed, so there's no SSH or status page from off the home
+      network. Merging to `main` (picked up by `timelapse-update.timer`) is the only remote
+      lever. Switch SSH to key-only first; password auth is still enabled.
+- [ ] **Hardware watchdog crash test** (or at least a plain reboot) — skipped to avoid an
+      unclean shutdown right before leaving. The Pi hasn't rebooted since the new units
+      landed, so the first reboot with them in place is untested.
+- [ ] On return, check `journalctl -u timelapse-net-watchdog.service` and
+      `journalctl --list-boots` for whether the network watchdog ever counted failures or
+      rebooted the Pi, and whether the pinned Hawaii YouTube IDs went stale again (roughly
+      every five weeks so far; last re-pinned 2026-09-13).
