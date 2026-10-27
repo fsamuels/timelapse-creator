@@ -1225,8 +1225,8 @@ def _gallery_cell_html(item, name_html, archive_dir):
     """One grid cell: a frame thumbnail, or a same-sized capture-lapse placeholder."""
     if item[0] == "gap":
         _, start, end, duration = item
-        span = start.strftime("%m-%d %H:%M") + " &rarr; "
-        span += end.strftime("%m-%d %H:%M") if end else "now"
+        span = start.strftime("%a %m-%d %H:%M") + " &rarr; "
+        span += end.strftime("%a %m-%d %H:%M") if end else "now"
         return (
             '<div class="gallery-cell">'
             f'<div class="gallery-gap-box"><b>{_format_duration(duration)}</b>{span}</div>'
