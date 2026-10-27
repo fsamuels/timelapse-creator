@@ -1436,4 +1436,5 @@ def test_gallery_page_html_renders_gap_placeholder_newest_first(tmp_path):
 
     assert page.count('class="gallery-gap-box"') == 1
     assert "3h 15m" in page
+    assert "Thu 07-16 12:00 &rarr; Thu 07-16 15:15" in page
     assert page.index("15-15") < page.index("3h 15m") < page.index("12-00")
