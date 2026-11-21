@@ -33,7 +33,8 @@
 # yt-dlp errors "This live stream recording is not available"), re-check that
 # channel's Live tab for the current MaunaKea West (cfht) / MaunaKea East
 # (subaru-telescope) stream and update the pinned ID (see PR discussion
-# 2026-08-06; both IDs went stale and were re-pinned again 2026-09-13).
+# 2026-08-06; both IDs went stale and were re-pinned again 2026-09-13;
+# subaru-telescope re-pinned again 2026-11-20).
 # Heavier per-fetch than a plain image GET (yt-dlp resolution + ffmpeg
 # decode), so kept at every 15 min for now but worth revisiting if Pi CPU
 # load climbs.
@@ -127,5 +128,5 @@ cams:
     site: hawaii
     type: youtube
     display_name: "Subaru Telescope"
-    url: "https://www.youtube.com/watch?v=Kj5DjRYkzD8"
+    url: "https://www.youtube.com/watch?v=OVcVOJYXUsc"
     interval_minutes: 15
