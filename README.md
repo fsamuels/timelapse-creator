@@ -78,7 +78,9 @@ whole off-season. The system must treat "cam is down" as ordinary operation, not
   dark-only, grouped by site in the config's `site_order`): disk-free/runway stat tiles up
   top (runway estimates days of free space left at today's projected burn rate), a per-cam
   card with its live thumbnail linked to the full-size frame, health status pill, last-frame
-  time with its configured capture cadence alongside it (e.g. "5m ago · every 15 min"), avg
+  time with its configured capture cadence alongside it (e.g. "5m ago · every 15 min") — the
+  "ago" text is color-scaled by multiples of the cam's capture interval (green → lime →
+  yellow → orange → red → rose → magenta → violet → slate) and kept aging live in JS, avg
   frame size/frame count/disk usage, and a 31-day recent-activity strip with tap-friendly
   tooltips
   (day counts show in a line below the strip, not just an unreachable-on-mobile hover title),

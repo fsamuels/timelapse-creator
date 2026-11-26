@@ -1438,3 +1438,43 @@ def test_gallery_page_html_renders_gap_placeholder_newest_first(tmp_path):
     assert "3h 15m" in page
     assert "Thu 07-16 12:00 &rarr; Thu 07-16 15:15" in page
     assert page.index("15-15") < page.index("3h 15m") < page.index("12-00")
+
+
+def test_capture_age_color_is_first_stop_within_one_interval():
+    assert generate.capture_age_color(0, 15) == generate.CAPTURE_AGE_STOPS[0][1]
+    assert generate.capture_age_color(15, 15) == generate.CAPTURE_AGE_STOPS[0][1]
+
+
+def test_capture_age_color_hits_each_stop_exactly():
+    for multiple, color in generate.CAPTURE_AGE_STOPS:
+        assert generate.capture_age_color(multiple * 15, 15) == color
+        assert generate.capture_age_color(multiple * 60, 60) == color
+
+
+def test_capture_age_color_interpolates_between_stops_and_clamps_past_last():
+    # Halfway (in log2 space) between 1x green and 2x lime.
+    mid = generate.capture_age_color(15 * 2**0.5, 15)
+    assert mid not in (generate.CAPTURE_AGE_STOPS[0][1], generate.CAPTURE_AGE_STOPS[1][1])
+    last_multiple, last_color = generate.CAPTURE_AGE_STOPS[-1]
+    assert generate.capture_age_color(last_multiple * 15 * 10, 15) == last_color
+
+
+def test_capture_age_color_falls_back_to_default_interval():
+    assert generate.capture_age_color(60, None) == generate.capture_age_color(
+        60, generate.DEFAULT_INTERVAL_MINUTES
+    )
+
+
+def test_cam_card_ago_text_is_color_scaled_and_live(tmp_path):
+    _write_frame(tmp_path, "bluewood", "summit", "2026-07-16T08-00-00-000000-0800")
+    now = datetime(2026, 7, 16, 12, 0, tzinfo=PACIFIC)
+
+    data = generate.build_page_data(tmp_path, None, now)
+    doc = generate.render_html(data, now)
+
+    # 4 hr since the last frame; no config, so the 15-min default applies -> 16x stop.
+    assert 'class="cam-ago"' in doc
+    assert 'data-captured="2026-07-16T08:00:00-08:00"' in doc
+    assert f'style="color:{generate.capture_age_color(240, 15)}">4 hr ago</span>' in doc
+    assert "querySelectorAll('.cam-ago')" in doc
+    assert "__CAPTURE_AGE_STOPS__" not in doc
