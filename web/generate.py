@@ -8,9 +8,10 @@ contribution grid, opened as a bottom-sheet "modal" whose interactivity — the
 open/close and the day-tap-for-detail behavior — is a mix of CSS ``:target``
 and small inline ``onclick`` attributes, keeping the page dependency-free.
 The one exception is a small inline ``<script>`` (see ``_LIVE_AGO_SCRIPT``)
-that keeps the header's "last updated" indicator live client-side, so a
-stale cached copy of the page is obvious rather than silently read as
-current. Clicking a day with frames in that grid reveals an
+that keeps the header's "last updated" indicator and each cam card's
+color-scaled "X ago" last-capture text (see ``capture_age_color``) live
+client-side, so a stale cached copy of the page is obvious rather than
+silently read as current. Clicking a day with frames in that grid reveals an
 hourly drill-down for just that day (see ``hourly_counts`` /
 ``day_details_for_grid``); days with no frames are skipped rather than given
 an empty sub-grid.
@@ -66,6 +67,25 @@ STALE_MULTIPLIER = 2  # flag a cam stale after this many missed capture interval
 RUNWAY_WARN_DAYS = 14  # runway at or below this is flagged in warning red
 DISK_FREE_WARN_PCT = 25  # % free at or below this turns the disk bar yellow
 DISK_FREE_CRITICAL_PCT = 10  # % free at or below this turns the disk bar red
+# Color scale for each cam card's "X ago" last-capture text, keyed by how many of
+# that cam's own capture intervals have elapsed (so a 15-min cam and a 60-min cam
+# read the same at the same number of missed captures). Colors are interpolated
+# in log2 space between stops. For a 15-min cam: green on schedule, lime after one
+# missed capture, yellow ~1 hr, orange ~2 hr, red ~4 hr, rose ~12 hr, magenta
+# ~1 day, violet ~4 days, slate (presumed dead) ~2 weeks and beyond. Mirrored
+# client-side by _LIVE_AGO_SCRIPT, which is fed this same list.
+CAPTURE_AGE_STOPS = (
+    (1, "#4ade80"),
+    (2, "#a3e635"),
+    (4, "#facc15"),
+    (8, "#fb923c"),
+    (16, "#f87171"),
+    (48, "#e11d48"),
+    (96, "#d946ef"),
+    (384, "#8b5cf6"),
+    (1344, "#64748b"),
+)
+DEFAULT_INTERVAL_MINUTES = 15  # color-scale fallback for a cam with no interval
 
 
 def scan_archive(archive_dir):
@@ -648,6 +668,27 @@ def _human_ago(delta):
     return f"{hours // 24} days ago"
 
 
+def capture_age_color(age_minutes, interval_minutes):
+    """Hex color for a last-capture age, per ``CAPTURE_AGE_STOPS``.
+
+    Anything within one capture interval is the first stop's color, anything
+    past the last stop is the last stop's color, and in between the color is
+    interpolated linearly in RGB across log2(age / interval).
+    """
+    interval = interval_minutes or DEFAULT_INTERVAL_MINUTES
+    ratio = max(age_minutes, 0) / interval
+    stops = CAPTURE_AGE_STOPS
+    if ratio <= stops[0][0]:
+        return stops[0][1]
+    for (lo, lo_color), (hi, hi_color) in zip(stops, stops[1:]):
+        if ratio <= hi:
+            t = (math.log2(ratio) - math.log2(lo)) / (math.log2(hi) - math.log2(lo))
+            a = [int(lo_color[i : i + 2], 16) for i in (1, 3, 5)]
+            b = [int(hi_color[i : i + 2], 16) for i in (1, 3, 5)]
+            return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
+    return stops[-1][1]
+
+
 def _human_duration(seconds):
     """Render a duration like '428ms' or '1.8s'."""
     if seconds < 1:
@@ -952,12 +993,15 @@ a{{text-decoration:none}}
 .live-ago{{font-weight:700;color:#e8eaed}}
 .live-ago.warn{{color:#f5a524}}
 .live-ago.stale{{color:#ff6b6b}}
+.cam-ago{{font-weight:700}}
 """
 
 # Computes elapsed time client-side from #live-ago's data-generated timestamp
 # rather than trusting the server-rendered "Generated ..." text, so a stale
 # cached copy of the page still reads correctly (see module docstring on the
 # Pi's 10-minute auto-update / capture cache). Mirrors _human_ago's buckets.
+# Also re-renders each cam card's .cam-ago text and color from its own
+# data-captured timestamp, so those keep aging between page reloads too.
 _LIVE_AGO_SCRIPT = """
 (function(){
   var el = document.getElementById('live-ago');
@@ -973,17 +1017,45 @@ _LIVE_AGO_SCRIPT = """
     var d = Math.floor(h / 24);
     return d + ' day' + (d === 1 ? '' : 's') + ' ago';
   }
+  // Mirrors capture_age_color(): log2-interpolated across CAPTURE_AGE_STOPS.
+  var STOPS = __CAPTURE_AGE_STOPS__;
+  function rgb(hex) {
+    return [1, 3, 5].map(function(i) { return parseInt(hex.substr(i, 2), 16); });
+  }
+  function ageColor(min, interval) {
+    var r = Math.max(min, 0) / interval;
+    if (r <= STOPS[0][0]) return STOPS[0][1];
+    for (var i = 1; i < STOPS.length; i++) {
+      var lo = STOPS[i - 1], hi = STOPS[i];
+      if (r <= hi[0]) {
+        var t = (Math.log2(r) - Math.log2(lo[0])) / (Math.log2(hi[0]) - Math.log2(lo[0]));
+        var a = rgb(lo[1]), b = rgb(hi[1]);
+        return '#' + a.map(function(x, j) {
+          return ('0' + Math.round(x + (b[j] - x) * t).toString(16)).slice(-2);
+        }).join('');
+      }
+    }
+    return STOPS[STOPS.length - 1][1];
+  }
+  var cams = document.querySelectorAll('.cam-ago');
   function update() {
-    var ms = Date.now() - generated.getTime();
+    var now = Date.now();
+    var ms = now - generated.getTime();
     el.textContent = fmt(ms);
     var min = ms / 60000;
     el.classList.toggle('stale', min >= 60);
     el.classList.toggle('warn', min >= 15 && min < 60);
+    for (var i = 0; i < cams.length; i++) {
+      var c = cams[i];
+      var age = now - new Date(c.getAttribute('data-captured')).getTime();
+      c.textContent = fmt(age);
+      c.style.color = ageColor(age / 60000, Number(c.getAttribute('data-interval')));
+    }
   }
   update();
   setInterval(update, 30000);
 })();
-"""
+""".replace("__CAPTURE_AGE_STOPS__", json.dumps([list(s) for s in CAPTURE_AGE_STOPS]))
 
 _WEEKDAY_LABELS = {1: "Mon", 3: "Wed", 5: "Fri"}  # row index (Sunday-first) -> label
 
@@ -1116,7 +1188,13 @@ def _cam_card_html(cam, now):
     interval = cam.get("interval_minutes")
     interval_suffix = f" &middot; every {interval} min" if interval else ""
     if last:
-        ago = html.escape(_human_ago(now - last))
+        age = now - last
+        color = capture_age_color(age.total_seconds() / 60, interval)
+        ago = (
+            f'<span class="cam-ago" data-captured="{html.escape(last.isoformat())}" '
+            f'data-interval="{interval or DEFAULT_INTERVAL_MINUTES}" '
+            f'style="color:{color}">{html.escape(_human_ago(age))}</span>'
+        )
         last_frame = (
             f'{html.escape(last.strftime("%Y-%m-%d %H:%M"))} &middot; {ago}{interval_suffix}'
         )

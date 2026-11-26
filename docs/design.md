@@ -353,7 +353,15 @@ downloaded per day.
   (`LIVE`/`STALE`) and last-frame time overlaid — the last-frame time is followed by its
   configured capture cadence (e.g. "5m ago · every 15 min"), so it's easy to judge whether
   that gap is normal for the cam rather than a sign of trouble; omitted for a cam with no
-  `interval_minutes` in the current config (e.g. decommissioned) — then avg frame size /
+  `interval_minutes` in the current config (e.g. decommissioned). The "ago" text itself is
+  color-coded on a wide scale keyed to multiples of that cam's interval (`CAPTURE_AGE_STOPS`
+  in `web/generate.py`, log2-interpolated: green within 1×, lime 2×, yellow 4×, orange 8×,
+  red 16×, rose 48×, magenta 96×, violet 384×, slate 1344× — for a 15-min cam that's
+  on-time through ~2 weeks dead), so a cam that's a few captures late reads very
+  differently from one that's been down for days, beyond the binary `LIVE`/`STALE` pill.
+  The same inline script that drives the header's "last updated" indicator re-renders
+  each card's text and color every 30 s from its `data-captured` timestamp, so it keeps
+  aging between page reloads — then avg frame size /
   frame count / disk usage, then a 31-day recent-activity strip (a quieter, lower-detail
   cousin of the full heatmap — see below) and a "full history →" link. An optional per-cam
   `display_name` config key, if set, renders as a small caption above the cam's slug in the
